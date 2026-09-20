@@ -3,7 +3,7 @@
 **Traffic Volume and Capacity Assessment**  
 한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.5.1**
 
-made by NYH · dmecyh@naver.com
+made by NYH · yuhyun1245@gmail.com
 
 국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작한 입체교차 개략검토 프로그램입니다.
 

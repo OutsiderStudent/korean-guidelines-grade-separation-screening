@@ -1404,7 +1404,7 @@ class MainWindow(QMainWindow):
             self,
             "프로그램 정보",
             f"<h2>{APP_NAME}</h2><p>v{APP_VERSION}</p><p>{APP_AUTHOR}</p>"
-            "<p><b>이메일</b>: dmecyh@naver.com</p>"
+            "<p><b>이메일</b>: yuhyun1245@gmail.com</p>"
             "<p>국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작하였습니다.</p>"
             "<p>본 결과는 기본계획 단계의 개략검토이며 상세 교통분석을 대신하지 않습니다.</p>",
         )
