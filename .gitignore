@@ -1,0 +1,38 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tmp/
+build/
+dist/
+*.spec
+!interchange_review.spec
+
+# Local package/cache directories
+/.pnpm-store/
+/.wrangler/
+
+# Other projects sharing this local workspace
+/field-survey-android/
+/signal-app/
+/web-gis-backup/
+/web-gis-beta/
+/web-gis-github/
+/src/arterial_analysis/
+/tests/test_arterial_*.py
+/arterial_analysis.spec
+/arterial_launcher.py
+/build_arterial.ps1
+/qa-*.png
+/assets/arterial-analysis-*
+/validation/*arterial*
+/validation/build_icon_v340.py
+/validation/*legacy*
+/validation/extract_*
+/validation/raw_xlsx_values.py
+/validation/network-diagram-preview.png
+/validation/node_modules/
+/validation/results_*/
+/validation/도시교외간선도로_*.md
+
+# Superseded design asset
+/assets/interchange-v340-legacy.ico
