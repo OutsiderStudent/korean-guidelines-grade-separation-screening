@@ -1,4 +1,4 @@
-"""입체화검토 v3.5.1 대량 시나리오 독립 검증.
+"""입체화검토 v3.6.0 대량 시나리오 독립 검증.
 
 프로그램 코어와 별도로 지침 경계식을 다시 계산하고, 국내에서 흔히 볼 수
 있는 차로수·교통량·회전율·중차량 조합 및 전체 지원 접근로 조합을 점검한다.
@@ -462,7 +462,7 @@ def run() -> dict:
     random_legacy_changed = sum(n for (old, new), n in random_legacy_transitions.items() if old != new)
 
     summary = {
-        "version": "3.5.1",
+        "version": "3.6.0",
         "structured_scenario_count": len(scenarios),
         "structured_area_distribution": dict(area_distribution),
         "topology_area_distribution": {key: dict(value) for key, value in topology_distribution.items()},
@@ -487,7 +487,7 @@ def run() -> dict:
     }
     (OUT / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    report = f"""# 입체화검토 v3.5.1 시나리오 검증 보고서
+    report = f"""# 입체화검토 v3.6.0 시나리오 검증 보고서
 
 ## 검증 범위
 
@@ -524,7 +524,7 @@ def run() -> dict:
 
 ## 판정
 
-3.5.1 구현은 통합 회전식, 중차량식, 고정 +600 P′ 가정, 최악 쌍 선택 및 그래프 생성에서 독립 재계산과 일치한다. 지침 예제의 명시 계수를 직접 입력하면 P·P′와 최종 C영역을 재현한다. 자동 모드는 공개된 일반 가정에 의한 개략값이며 지침 예제 고유 계수와 동일하다고 보지 않는다.
+3.6.0 구현은 통합 회전식, 중차량식, 고정 +600 P′ 가정, 최악 쌍 선택 및 그래프 생성에서 독립 재계산과 일치한다. 지침 예제의 명시 계수를 직접 입력하면 P·P′와 최종 C영역을 재현한다. 자동 모드는 공개된 일반 가정에 의한 개략값이며 지침 예제 고유 계수와 동일하다고 보지 않는다.
 
 ## 검증 한계와 우선 조치
 

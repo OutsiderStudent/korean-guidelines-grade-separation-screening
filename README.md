@@ -1,7 +1,7 @@
 # Korean Guidelines-Based Grade Separation Screening
 
 **Traffic Volume and Capacity Assessment**  
-한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.5.1**
+한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.6.0**
 
 made by NYH · yuhyun1245@gmail.com
 
@@ -22,6 +22,7 @@ made by NYH · yuhyun1245@gmail.com
 - 프로젝트 새로 만들기·열기·저장·다른 이름으로 저장(`.igr3`)
 - 지침 원문 페이지, 적용 공식, 출처와 프로그램 가정을 확인하는 `지침·공식` 탭
 - Noto Sans KR 글꼴과 전용 아이콘을 포함한 단일 portable EXE
+- 실행 시 GitHub Release의 최신 버전을 자동 확인하고 SHA-256 검증 후 업데이트
 
 ## 계산 원칙과 출처 구분
 
@@ -52,6 +53,6 @@ python validation\render_ui.py
 .\build.ps1
 ```
 
-빌드 결과: `dist\입체화검토_v3.5.1.exe`
+빌드 결과: `dist\K-GSS_v3.6.0.exe`
 
 Noto Sans KR은 SIL Open Font License 1.1로 포함되며 라이선스 원문은 `assets/NotoSansKR-OFL.txt`에 있습니다.

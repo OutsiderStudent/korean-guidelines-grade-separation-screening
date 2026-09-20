@@ -16,7 +16,7 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.5.1")
+        self.assertEqual(APP_VERSION, "3.6.0")
 
     def test_input_cards_follow_clockwise_order(self) -> None:
         page = InputPage()

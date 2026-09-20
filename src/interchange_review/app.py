@@ -1,4 +1,4 @@
-"""입체화검토 v3.5.1 PySide6 데스크톱 GUI."""
+"""입체화검토 v3.6.0 PySide6 데스크톱 GUI."""
 
 from __future__ import annotations
 
@@ -58,10 +58,11 @@ from .screening import (
     analyze_intersection,
 )
 from .engine import SignalAssumptions
+from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.6.0"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 AREA_STYLE = {
@@ -1203,8 +1204,11 @@ class MainWindow(QMainWindow):
         self.topology.changed.connect(self._mark_dirty)
         self.input.changed.connect(self._mark_dirty)
         self._create_menu()
+        self.updater = UpdateController(APP_VERSION, self)
         self.statusBar().showMessage(f"{APP_NAME} v{APP_VERSION}   ·   {APP_AUTHOR}")
         self._page_changed(0)
+        if getattr(sys, "frozen", False) and os.environ.get("KGSS_DISABLE_UPDATE_CHECK") != "1":
+            QTimer.singleShot(2_500, self.updater.check)
 
     def _create_menu(self) -> None:
         project = self.menuBar().addMenu("프로젝트")
@@ -1224,7 +1228,9 @@ class MainWindow(QMainWindow):
         guide.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
         about = QAction("프로그램 정보", self)
         about.triggered.connect(self.show_about)
-        help_menu.addActions([guide, about])
+        update = QAction("업데이트 확인", self)
+        update.triggered.connect(lambda: self.updater.check(manual=True))
+        help_menu.addActions([guide, update, about])
 
     def _page_changed(self, index: int) -> None:
         names = ["교차로 형태", "교통량 입력", "입력 확인", "검토 결과"]

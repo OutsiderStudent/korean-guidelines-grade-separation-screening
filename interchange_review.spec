@@ -30,7 +30,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="입체화검토_v3.5.1",
+    name="K-GSS_v3.6.0",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
