@@ -30,6 +30,8 @@ dist/
 /validation/extract_*
 /validation/raw_xlsx_values.py
 /validation/network-diagram-preview.png
+/validation/network-diagram-*.png
+/validation/*.ara1
 /validation/node_modules/
 /validation/results_*/
 /validation/도시교외간선도로_*.md
