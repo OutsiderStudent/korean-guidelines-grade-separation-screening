@@ -29,8 +29,7 @@ dist/
 /validation/*legacy*
 /validation/extract_*
 /validation/raw_xlsx_values.py
-/validation/network-diagram-preview.png
-/validation/network-diagram-*.png
+/validation/*.png
 /validation/*.ara1
 /validation/node_modules/
 /validation/results_*/
