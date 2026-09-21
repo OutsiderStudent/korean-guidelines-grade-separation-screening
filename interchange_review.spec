@@ -30,7 +30,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="K-GSS_v3.6.0",
+    name="K-GSS_v3.7.0",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

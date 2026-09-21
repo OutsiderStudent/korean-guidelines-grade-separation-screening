@@ -4,9 +4,11 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QMessageBox
 
-from interchange_review.app import APP_VERSION, CoefficientSettingsDialog, ConfirmPage, InputPage, MainWindow
+from interchange_review.app import APP_VERSION, CoefficientSettingsDialog, ConfirmPage, InputPage, MainWindow, MotionButton, StepProgress
 from interchange_review.screening import APPROACH_ORDER, ApproachInput
 
 
@@ -16,7 +18,7 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.6.0")
+        self.assertEqual(APP_VERSION, "3.7.0")
 
     def test_input_cards_follow_clockwise_order(self) -> None:
         page = InputPage()
@@ -86,6 +88,47 @@ class UiRegressionTest(unittest.TestCase):
         window = MainWindow()
         self.assertGreaterEqual(window.minimumWidth(), 1_050)
         self.assertGreaterEqual(window.minimumHeight(), 750)
+
+    def test_progress_distinguishes_current_and_completed_steps(self) -> None:
+        progress = StepProgress()
+        progress.set_step(2)
+        self.assertEqual([step.property("state") for step, _, _ in progress.steps], [
+            "done", "done", "current", "pending",
+        ])
+        self.assertEqual(progress.steps[0][1].text(), "✓")
+
+    def test_button_motion_reacts_to_mouse_and_keyboard_without_changing_click(self) -> None:
+        button = MotionButton("다음")
+        button.motion_enabled = True
+        button.show()
+        clicks = []
+        button.clicked.connect(lambda: clicks.append(True))
+        QTest.mousePress(button, Qt.MouseButton.LeftButton)
+        self.assertEqual(button._animation.endValue(), 0.78)
+        QTest.mouseRelease(button, Qt.MouseButton.LeftButton)
+        self.assertEqual(button._animation.endValue(), 1.0)
+        QTest.keyPress(button, Qt.Key.Key_Space)
+        self.assertEqual(button._animation.endValue(), 0.78)
+        QTest.keyRelease(button, Qt.Key.Key_Space)
+        self.assertEqual(button._animation.endValue(), 1.0)
+        self.assertEqual(len(clicks), 2)
+        button.close()
+
+    def test_button_motion_can_be_disabled(self) -> None:
+        button = MotionButton("이전")
+        button.motion_enabled = False
+        button._animate_to(0.78, 75)
+        self.assertEqual(button._effect.opacity(), 1.0)
+
+    def test_input_feedback_and_accessible_names(self) -> None:
+        page = InputPage()
+        page.set_codes(["SB", "WB", "NB"])
+        self.assertEqual(page.warning.property("status"), "warning")
+        self.assertIn("SB 좌회전", page.cards["SB"].left.accessibleName())
+        page.cards["SB"].through.setValue(100)
+        page.cards["WB"].through.setValue(100)
+        page.cards["NB"].through.setValue(100)
+        self.assertEqual(page.warning.property("status"), "ok")
 
     def test_return_to_start_can_be_cancelled_or_discarded(self) -> None:
         window = MainWindow()

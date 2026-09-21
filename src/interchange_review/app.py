@@ -1,4 +1,4 @@
-"""입체화검토 v3.6.0 PySide6 데스크톱 GUI."""
+"""입체화검토 v3.7.0 PySide6 데스크톱 GUI."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.7.0"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 AREA_STYLE = {
@@ -82,6 +82,94 @@ def card() -> QFrame:
     frame = QFrame()
     frame.setObjectName("card")
     return frame
+
+
+class MotionButton(QPushButton):
+    """레이아웃을 흔들지 않는 짧은 눌림·복귀 효과를 제공한다."""
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(text, parent)
+        self.motion_enabled = (
+            os.environ.get("KGSS_REDUCE_MOTION") != "1"
+            and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
+        )
+        self._effect = QGraphicsOpacityEffect(self)
+        self._effect.setOpacity(1.0)
+        self.setGraphicsEffect(self._effect)
+        self._animation = QPropertyAnimation(self._effect, b"opacity", self)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def _animate_to(self, opacity: float, duration: int) -> None:
+        self._animation.stop()
+        if not self.motion_enabled or not self.isEnabled():
+            self._effect.setOpacity(1.0)
+            return
+        self._animation.setDuration(duration)
+        self._animation.setStartValue(self._effect.opacity())
+        self._animation.setEndValue(opacity)
+        self._animation.start()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            self._animate_to(0.78, 75)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._animate_to(1.0, 160)
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter) and not event.isAutoRepeat():
+            self._animate_to(0.78, 75)
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._animate_to(1.0, 160)
+        super().keyReleaseEvent(event)
+
+
+class StepProgress(QFrame):
+    """현재 단계와 완료된 단계를 작은 화면에서도 구분해 보여준다."""
+
+    NAMES = ("교차로 형태", "교통량 입력", "입력 확인", "검토 결과")
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("stepProgress")
+        self.steps: list[tuple[QFrame, QLabel, QLabel]] = []
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 7, 20, 7)
+        layout.setSpacing(8)
+        for number, name in enumerate(self.NAMES, 1):
+            step = QFrame()
+            step.setObjectName("progressStep")
+            row = QHBoxLayout(step)
+            row.setContentsMargins(9, 5, 9, 5)
+            row.setSpacing(7)
+            badge = QLabel(str(number))
+            badge.setObjectName("progressBadge")
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedSize(22, 22)
+            label = QLabel(name)
+            label.setObjectName("progressText")
+            row.addWidget(badge)
+            row.addWidget(label)
+            row.addStretch()
+            layout.addWidget(step, 1)
+            self.steps.append((step, badge, label))
+        self.set_step(0)
+
+    def set_step(self, index: int) -> None:
+        for number, (step, badge, label) in enumerate(self.steps):
+            state = "current" if number == index else "done" if number < index else "pending"
+            for widget in (step, badge, label):
+                widget.setProperty("state", state)
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+            badge.setText("✓" if number < index else str(number + 1))
+            step.setAccessibleName(f"{label.text()}, {state}")
 
 
 class AutoFadeScrollBar(QScrollBar):
@@ -363,8 +451,8 @@ class LaneStepper(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
-        self.minus = QPushButton("−")
-        self.plus = QPushButton("+")
+        self.minus = MotionButton("−")
+        self.plus = MotionButton("+")
         for button in (self.minus, self.plus):
             button.setObjectName("stepButton")
             button.setFixedSize(28, 28)
@@ -422,6 +510,10 @@ class ApproachCard(QFrame):
         self.left = TrafficInput()
         self.through = TrafficInput()
         self.right = TrafficInput()
+        self.lanes.editor.setAccessibleName(f"{code} 편도 차로수")
+        self.heavy.setAccessibleName(f"{code} 중차량 비율")
+        for direction, editor in (("좌회전", self.left), ("직진", self.through), ("우회전", self.right)):
+            editor.setAccessibleName(f"{code} {direction} 교통량, 대/시")
         self.total_label = QLabel("0")
         self.total_label.setObjectName("total")
         self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -537,9 +629,9 @@ class CoefficientSettingsDialog(QDialog):
         pprime_box.addLayout(pform)
         root.addWidget(pprime)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("적용")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
+        buttons = QDialogButtonBox()
+        buttons.addButton(MotionButton("적용"), QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton(MotionButton("취소"), QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
@@ -606,7 +698,7 @@ class InputPage(QWidget):
             "utilization": 0.9,
         }
         self.direct_factors: dict[str, tuple[float, float]] = {}
-        self.advanced_button = QPushButton("상세 보정 설정")
+        self.advanced_button = MotionButton("상세 보정 설정")
         self.advanced_button.setObjectName("secondaryButton")
         title_row.addWidget(self.advanced_button)
         self.same_heavy = QCheckBox("모든 접근로에 같은 중차량 비율 적용")
@@ -623,6 +715,7 @@ class InputPage(QWidget):
         root.addLayout(title_row)
         self.warning = QLabel()
         self.warning.setObjectName("warning")
+        self.warning.setMinimumHeight(30)
         root.addWidget(self.warning)
         body = QHBoxLayout()
         body.setSpacing(12)
@@ -730,6 +823,9 @@ class InputPage(QWidget):
             "교통량이 0인 접근로: " + ", ".join(zeros) + " · 실제 0인지 확인해 주세요."
             if zeros else "모든 접근로 입력이 완료됐습니다."
         )
+        self.warning.setProperty("status", "warning" if zeros else "ok")
+        self.warning.style().unpolish(self.warning)
+        self.warning.style().polish(self.warning)
         self.preview.set_data(list(self.cards), {code: item.lanes.value() for code, item in self.cards.items()})
         self.changed.emit()
 
@@ -968,11 +1064,11 @@ class ResultPage(QWidget):
         self.detail_table.setFont(QFont("Noto Sans KR", 9, QFont.Weight.DemiBold))
         self.detail_table.setFixedHeight(225)
         side.addWidget(self.detail_table)
-        self.copy_button = QPushButton("클립보드에 복사")
-        self.png_button = QPushButton("PNG 다운로드")
-        self.detail_button = QPushButton("상세 그래프 다운로드")
-        self.all_button = QPushButton("모든 그래프 PNG 다운로드")
-        self.text_button = QPushButton("계산 결과 복사")
+        self.copy_button = MotionButton("클립보드에 복사")
+        self.png_button = MotionButton("PNG 다운로드")
+        self.detail_button = MotionButton("상세 그래프 다운로드")
+        self.all_button = MotionButton("모든 그래프 PNG 다운로드")
+        self.text_button = MotionButton("계산 결과 복사")
         for button in (self.copy_button, self.png_button, self.detail_button, self.all_button, self.text_button):
             button.setMinimumHeight(30)
             side.addWidget(button)
@@ -1174,10 +1270,14 @@ class MainWindow(QMainWindow):
         review = QWidget()
         review_layout = QVBoxLayout(review)
         review_layout.setContentsMargins(0, 0, 0, 0)
-        self.step_label = QLabel()
-        self.step_label.setObjectName("stepper")
+        self.step_label = StepProgress()
         review_layout.addWidget(self.step_label)
         self.pages = QStackedWidget()
+        self._page_animation: QPropertyAnimation | None = None
+        self._animations_enabled = (
+            os.environ.get("KGSS_REDUCE_MOTION") != "1"
+            and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
+        )
         self.topology = TopologyPage()
         self.input = InputPage()
         self.confirm = ConfirmPage()
@@ -1187,8 +1287,8 @@ class MainWindow(QMainWindow):
         review_layout.addWidget(self.pages, 1)
         nav = QHBoxLayout()
         nav.setContentsMargins(18, 4, 18, 8)
-        self.back = QPushButton("이전")
-        self.next = QPushButton("다음")
+        self.back = MotionButton("이전")
+        self.next = MotionButton("다음")
         self.next.setObjectName("primary")
         nav.addWidget(self.back)
         nav.addStretch()
@@ -1233,10 +1333,25 @@ class MainWindow(QMainWindow):
         help_menu.addActions([guide, update, about])
 
     def _page_changed(self, index: int) -> None:
-        names = ["교차로 형태", "교통량 입력", "입력 확인", "검토 결과"]
-        self.step_label.setText("    ".join(f"{'●' if i == index else '○'} {name}" for i, name in enumerate(names)))
+        self.step_label.set_step(index)
         self.back.setVisible(index > 0)
         self.next.setText("검토 실행" if index == 2 else ("처음으로" if index == 3 else "다음"))
+        if self._animations_enabled:
+            if self._page_animation is not None:
+                self._page_animation.stop()
+            page = self.pages.widget(index)
+            effect = page.graphicsEffect()
+            if effect is None:
+                effect = QGraphicsOpacityEffect(page)
+                page.setGraphicsEffect(effect)
+            effect.setOpacity(0.35)
+            animation = QPropertyAnimation(effect, b"opacity", self)
+            animation.setDuration(180)
+            animation.setStartValue(0.35)
+            animation.setEndValue(1.0)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            animation.start()
+            self._page_animation = animation
         self._update_nav()
 
     def _update_nav(self) -> None:
@@ -1433,10 +1548,19 @@ QLabel#inputHeader { color: #526079; font-size: 9pt; font-weight: 800; }
 QLabel#trafficSummary { background: #EAF2FF; color: #1769D2; border-radius: 10px; padding: 9px; font-size: 13pt; font-weight: 900; }
 QLabel#grandTotal { font-size: 14pt; font-weight: 800; color: #172033; }
 QLabel#total { font-weight: 700; color: #1769D2; }
-QLabel#warning { background: #FFF8E6; color: #8A5A00; padding: 7px; border-radius: 8px; }
+QLabel#warning { background: #FFF8E6; color: #8A5A00; padding: 6px 10px; border-radius: 8px; }
+QLabel#warning[status="ok"] { background: #E8F8F0; color: #10784B; }
 QLabel#hint { padding: 6px; color: #1769D2; font-weight: 700; }
 QLabel#hint[invalid='true'] { color: #C9363E; background: #FFF0F1; }
-QLabel#stepper { background: white; padding: 10px 20px; color: #657087; font-weight: 700; border-bottom: 1px solid #E7EBF0; }
+QFrame#stepProgress { background: white; border-bottom: 1px solid #E7EBF0; }
+QFrame#progressStep { background: transparent; border: 1px solid transparent; border-radius: 9px; }
+QFrame#progressStep[state="current"] { background: #EAF2FF; border-color: #C5DCFC; }
+QLabel#progressBadge { background: #EDF1F6; color: #7B8798; border-radius: 11px; font-size: 9pt; font-weight: 800; }
+QLabel#progressBadge[state="current"] { background: #2375E8; color: white; }
+QLabel#progressBadge[state="done"] { background: #DDF4E8; color: #128253; }
+QLabel#progressText { color: #8994A5; font-size: 9pt; font-weight: 700; }
+QLabel#progressText[state="current"] { color: #1769D2; font-weight: 900; }
+QLabel#progressText[state="done"] { color: #344054; }
 QLabel#resultArea { font-size: 22pt; font-weight: 900; }
 QLabel#criticalPair { color: #1769D2; font-weight: 800; padding: 4px; }
 QLabel#sideTitle { font-size: 11pt; font-weight: 800; color: #172033; }
@@ -1449,9 +1573,13 @@ QFrame#approachRow[alternate="true"] { background: #F8FAFD; }
 QPushButton { background: white; border: 1px solid #DDE3EC; border-radius: 9px; padding: 7px 12px; font-weight: 700; }
 QPushButton:hover { background: #F0F5FF; border-color: #8CB9F5; }
 QPushButton:checked, QPushButton#primary { background: #2375E8; color: white; border-color: #2375E8; }
+QPushButton:pressed { background: #DCEAFF; border-color: #2375E8; }
+QPushButton#primary:pressed { background: #155FC7; border-color: #155FC7; }
+QPushButton:focus { border: 2px solid #2375E8; }
 QPushButton:disabled { background: #E9EDF2; color: #A4ACB8; border-color: #E9EDF2; }
 QPushButton#stepButton { padding: 0; min-width: 28px; max-width: 28px; font-size: 14pt; font-weight: 900; }
 QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit { background: #FFFFFF; border: 1px solid #CFD7E3; border-radius: 7px; padding: 5px; }
+QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QLineEdit:focus { border: 2px solid #2375E8; background: #FFFFFF; }
 QLineEdit#trafficEditor { min-width: 44px; }
 QListWidget, QTextBrowser, QScrollArea { background: white; border: 1px solid #E1E6EE; border-radius: 12px; padding: 6px; }
 QListWidget::item { padding: 11px; border-radius: 8px; }

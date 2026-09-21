@@ -1,13 +1,13 @@
 # Korean Guidelines-Based Grade Separation Screening
 
 **Traffic Volume and Capacity Assessment**  
-한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.6.0**
+한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.7.0**
 
 made by NYH · yuhyun1245@gmail.com
 
 국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작한 입체교차 개략검토 프로그램입니다.
 
-> This is a private source repository for K-GSS, a Korean-guidelines-based desktop tool for screening intersection grade-separation needs using traffic volume and capacity.
+> K-GSS is a Korean-guidelines-based desktop tool for screening intersection grade-separation needs using traffic volume and capacity.
 
 국토교통부 「교차로 설계 지침(2025.06)」의 `1.4.2 교통량과 입체교차의 관계`에 따라 교통량과 용량의 A·B·C·D 영역을 검토하는 Windows 데스크톱 프로그램입니다.
 
@@ -23,6 +23,7 @@ made by NYH · yuhyun1245@gmail.com
 - 지침 원문 페이지, 적용 공식, 출처와 프로그램 가정을 확인하는 `지침·공식` 탭
 - Noto Sans KR 글꼴과 전용 아이콘을 포함한 단일 portable EXE
 - 실행 시 GitHub Release의 최신 버전을 자동 확인하고 SHA-256 검증 후 업데이트
+- 현재 단계 표시, 화면 전환 페이드, 마우스·키보드 버튼 눌림 효과 (`KGSS_REDUCE_MOTION=1`로 모션 끄기)
 
 ## 계산 원칙과 출처 구분
 
@@ -53,6 +54,6 @@ python validation\render_ui.py
 .\build.ps1
 ```
 
-빌드 결과: `dist\K-GSS_v3.6.0.exe`
+빌드 결과: `dist\K-GSS_v3.7.0.exe`
 
 Noto Sans KR은 SIL Open Font License 1.1로 포함되며 라이선스 원문은 `assets/NotoSansKR-OFL.txt`에 있습니다.
