@@ -18,7 +18,7 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.7.0")
+        self.assertEqual(APP_VERSION, "3.7.1")
 
     def test_input_cards_follow_clockwise_order(self) -> None:
         page = InputPage()
@@ -100,25 +100,45 @@ class UiRegressionTest(unittest.TestCase):
     def test_button_motion_reacts_to_mouse_and_keyboard_without_changing_click(self) -> None:
         button = MotionButton("다음")
         button.motion_enabled = True
+        button.resize(100, 36)
         button.show()
         clicks = []
         button.clicked.connect(lambda: clicks.append(True))
         QTest.mousePress(button, Qt.MouseButton.LeftButton)
-        self.assertEqual(button._animation.endValue(), 0.78)
+        self.assertEqual(button._animation.endValue(), 1.0)
+        self.assertEqual(button._animation.duration(), 95)
         QTest.mouseRelease(button, Qt.MouseButton.LeftButton)
-        self.assertEqual(button._animation.endValue(), 1.0)
+        self.assertEqual(button._animation.endValue(), 0.0)
+        self.assertEqual(button._animation.duration(), 260)
         QTest.keyPress(button, Qt.Key.Key_Space)
-        self.assertEqual(button._animation.endValue(), 0.78)
-        QTest.keyRelease(button, Qt.Key.Key_Space)
         self.assertEqual(button._animation.endValue(), 1.0)
+        QTest.keyRelease(button, Qt.Key.Key_Space)
+        self.assertEqual(button._animation.endValue(), 0.0)
         self.assertEqual(len(clicks), 2)
+        self.assertIsNone(button.graphicsEffect())
+        QTest.qWait(300)
+        self.assertAlmostEqual(button._get_press_progress(), 0.0, places=3)
+        self.assertGreater(button.grab().toImage().pixelColor(50, 18).alpha(), 0)
         button.close()
 
     def test_button_motion_can_be_disabled(self) -> None:
         button = MotionButton("이전")
         button.motion_enabled = False
-        button._animate_to(0.78, 75)
-        self.assertEqual(button._effect.opacity(), 1.0)
+        button._animate_pressed(True)
+        self.assertEqual(button._get_press_progress(), 0.0)
+        self.assertIsNone(button.graphicsEffect())
+
+    def test_button_remains_visible_after_repeated_clicks(self) -> None:
+        button = MotionButton("PNG 다운로드")
+        button.motion_enabled = True
+        button.resize(180, 38)
+        button.show()
+        for _ in range(20):
+            QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        QTest.qWait(300)
+        image = button.grab().toImage()
+        self.assertTrue(button.isVisible())
+        self.assertGreater(image.pixelColor(image.width() // 2, image.height() // 2).alpha(), 0)
 
     def test_input_feedback_and_accessible_names(self) -> None:
         page = InputPage()

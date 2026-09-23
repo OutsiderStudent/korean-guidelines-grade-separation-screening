@@ -1,4 +1,4 @@
-"""입체화검토 v3.7.0 PySide6 데스크톱 GUI."""
+"""입체화검토 v3.7.1 PySide6 데스크톱 GUI."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Qt, Signal
+from PySide6.QtCore import Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QAction, QColor, QFont, QFontDatabase, QIcon, QIntValidator,
     QPainter, QPen, QPixmap,
@@ -41,6 +41,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QStackedWidget,
+    QStyle,
+    QStyleOptionButton,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -62,7 +64,7 @@ from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.7.1"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 AREA_STYLE = {
@@ -85,7 +87,7 @@ def card() -> QFrame:
 
 
 class MotionButton(QPushButton):
-    """레이아웃을 흔들지 않는 짧은 눌림·복귀 효과를 제공한다."""
+    """투명도 효과 없이 축소·스프링 복귀로 눌림을 표현한다."""
 
     def __init__(self, text: str = "", parent=None) -> None:
         super().__init__(text, parent)
@@ -93,41 +95,46 @@ class MotionButton(QPushButton):
             os.environ.get("KGSS_REDUCE_MOTION") != "1"
             and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
         )
-        self._effect = QGraphicsOpacityEffect(self)
-        self._effect.setOpacity(1.0)
-        self.setGraphicsEffect(self._effect)
-        self._animation = QPropertyAnimation(self._effect, b"opacity", self)
-        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._press_progress = 0.0
+        self._animation = QPropertyAnimation(self, b"pressProgress", self)
+        self.pressed.connect(lambda: self._animate_pressed(True))
+        self.released.connect(lambda: self._animate_pressed(False))
 
-    def _animate_to(self, opacity: float, duration: int) -> None:
+    def _get_press_progress(self) -> float:
+        return self._press_progress
+
+    def _set_press_progress(self, value: float) -> None:
+        # OutBack 복귀의 아주 작은 확대 구간은 허용하되 과도한 변형은 막는다.
+        self._press_progress = max(-0.14, min(1.0, float(value)))
+        self.update()
+
+    pressProgress = Property(float, _get_press_progress, _set_press_progress)
+
+    def _animate_pressed(self, pressed: bool) -> None:
         self._animation.stop()
         if not self.motion_enabled or not self.isEnabled():
-            self._effect.setOpacity(1.0)
+            self._set_press_progress(0.0)
             return
-        self._animation.setDuration(duration)
-        self._animation.setStartValue(self._effect.opacity())
-        self._animation.setEndValue(opacity)
+        self._animation.setStartValue(self._press_progress)
+        self._animation.setEndValue(1.0 if pressed else 0.0)
+        self._animation.setDuration(95 if pressed else 260)
+        self._animation.setEasingCurve(
+            QEasingCurve.Type.OutCubic if pressed else QEasingCurve.Type.OutBack
+        )
         self._animation.start()
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
-            self._animate_to(0.78, 75)
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._animate_to(1.0, 160)
-        super().mouseReleaseEvent(event)
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter) and not event.isAutoRepeat():
-            self._animate_to(0.78, 75)
-        super().keyPressEvent(event)
-
-    def keyReleaseEvent(self, event) -> None:  # noqa: N802
-        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._animate_to(1.0, 160)
-        super().keyReleaseEvent(event)
+    def paintEvent(self, event) -> None:  # noqa: N802
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        depth = 0.10 if self.objectName() == "stepButton" else 0.055
+        scale = 1.0 - depth * self._press_progress
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.scale(scale, scale)
+        painter.translate(-self.width() / 2, -self.height() / 2)
+        self.style().drawControl(QStyle.ControlElement.CE_PushButton, option, painter, self)
 
 
 class StepProgress(QFrame):
