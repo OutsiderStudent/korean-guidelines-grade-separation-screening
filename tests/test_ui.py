@@ -1,5 +1,8 @@
 import os
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -18,7 +21,23 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.7.1")
+        self.assertEqual(APP_VERSION, "3.8.0")
+
+    def test_saved_project_can_be_loaded_directly_from_a_path(self) -> None:
+        source = MainWindow()
+        source.input.set_codes(source.topology.selected_codes())
+        source.input.cards["SB"].through.setValue(720)
+        source.input.cards["WB"].left.setValue(130)
+        data = source.project_data()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "한글 공백 교차로.igr3"
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            loaded = MainWindow()
+            self.assertTrue(loaded.load_project(path))
+            self.assertEqual(loaded.project_path, path.resolve())
+            self.assertEqual(loaded.input.cards["SB"].through.value(), 720)
+            self.assertEqual(loaded.input.cards["WB"].left.value(), 130)
+            self.assertIn(path.name, loaded.windowTitle())
 
     def test_input_cards_follow_clockwise_order(self) -> None:
         page = InputPage()

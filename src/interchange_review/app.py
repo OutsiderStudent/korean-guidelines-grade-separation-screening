@@ -1,4 +1,4 @@
-"""입체화검토 v3.7.1 PySide6 데스크톱 GUI."""
+"""입체화검토 v3.8.0 PySide6 데스크톱 GUI."""
 
 from __future__ import annotations
 
@@ -60,11 +60,12 @@ from .screening import (
     analyze_intersection,
 )
 from .engine import SignalAssumptions
+from .file_association import register_file_association, startup_project_path
 from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.7.1"
+APP_VERSION = "3.8.0"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 AREA_STYLE = {
@@ -1474,9 +1475,13 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "프로젝트 열기", "", PROJECT_FILTER)
         if not path:
             return
+        self.load_project(Path(path))
+
+    def load_project(self, path: str | Path) -> bool:
+        path = Path(path).expanduser().resolve()
         try:
             self._suppress_dirty = True
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
             active = list(data["active_codes"])
             self.topology.set_codes(active)
             self.input.set_codes(self.topology.selected_codes())
@@ -1499,7 +1504,7 @@ class MainWindow(QMainWindow):
             for item in data.get("approaches", []):
                 if item["code"] in self.input.cards:
                     self.input.cards[item["code"]].set_value(item)
-            self.project_path = Path(path)
+            self.project_path = path
             if data.get("result") and self.input.is_valid():
                 self.last_result = analyze_intersection(
                     self.input.values(),
@@ -1511,8 +1516,12 @@ class MainWindow(QMainWindow):
             else:
                 self.pages.setCurrentIndex(1)
             self.is_dirty = False
-        except (KeyError, ValueError, json.JSONDecodeError) as error:
+            self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — {path.name}")
+            self.statusBar().showMessage(f"{path.name} 파일을 불러왔습니다.   ·   {APP_AUTHOR}", 5000)
+            return True
+        except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
             QMessageBox.critical(self, APP_NAME, f"프로젝트 파일을 열 수 없습니다.\n{error}")
+            return False
         finally:
             self._suppress_dirty = False
 
@@ -1525,6 +1534,7 @@ class MainWindow(QMainWindow):
         self.input.set_codes(self.topology.selected_codes(), preserve=False)
         self.pages.setCurrentIndex(0)
         self.is_dirty = False
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self._suppress_dirty = False
 
     def show_about(self) -> None:
@@ -1605,6 +1615,7 @@ QScrollBar#autoFadeScrollBar::add-page:vertical, QScrollBar#autoFadeScrollBar::s
 
 def main() -> int:
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+    startup_project = startup_project_path(sys.argv[1:])
     app = QApplication(sys.argv)
     font_path = resource_path("NotoSansKR.ttf")
     if font_path.exists():
@@ -1620,4 +1631,8 @@ def main() -> int:
         app.setWindowIcon(QIcon(str(icon)))
     window = MainWindow()
     window.show()
+    if getattr(sys, "frozen", False):
+        register_file_association()
+    if startup_project is not None:
+        QTimer.singleShot(0, lambda: window.load_project(startup_project))
     return app.exec()
