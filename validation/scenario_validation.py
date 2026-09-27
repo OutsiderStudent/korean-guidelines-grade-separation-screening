@@ -409,8 +409,9 @@ def run() -> dict:
 
     # 대표 그래프 4개 영역 x 6개를 저장하고 접촉 시트 생성.
     app = QApplication.instance() or QApplication([])
-    QFontDatabase.addApplicationFont(str(resource_path("NotoSansKR.ttf")))
-    app.setFont(QFont("Noto Sans KR", 10))
+    from interchange_review.theme import apply_application_theme, load_application_fonts
+    load_application_fonts(resource_path)
+    apply_application_theme(app, "light")
     selected_images: list[tuple[str, QImage]] = []
     chart_qa_failures = 0
     for area in "ABCD":

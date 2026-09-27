@@ -7,11 +7,11 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
-from interchange_review.app import CoefficientSettingsDialog, MainWindow, STYLE, resource_path
+from interchange_review.app import CoefficientSettingsDialog, MainWindow, resource_path
 from interchange_review.screening import analyze_intersection
+from interchange_review.theme import apply_application_theme, load_application_fonts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,11 +27,12 @@ def save_widget(widget, name: str) -> None:
 def run() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
-    QFontDatabase.addApplicationFont(str(resource_path("NotoSansKR.ttf")))
-    app.setFont(QFont("Noto Sans KR", 10))
-    app.setStyleSheet(STYLE)
+    load_application_fonts(resource_path)
+    apply_application_theme(app, "light")
     window = MainWindow()
     window.resize(1050, 750)
+    window.pages.setCurrentIndex(0)
+    save_widget(window, "ui_topology_1050x750.png")
     codes = ["SB", "SWB", "WB", "NB", "EB"]
     window.topology.set_codes(codes)
     window.input.set_codes(codes, preserve=False)
@@ -68,6 +69,14 @@ def run() -> None:
     window.results.set_result(result)
     window.pages.setCurrentIndex(3)
     save_widget(window, "ui_result_1050x750.png")
+
+    window.set_theme("dark", persist=False)
+    window.pages.setCurrentIndex(0)
+    save_widget(window, "ui_topology_dark_1050x750.png")
+    window.pages.setCurrentIndex(1)
+    save_widget(window, "ui_input_dark_1050x750.png")
+    window.pages.setCurrentIndex(3)
+    save_widget(window, "ui_result_dark_1050x750.png")
     window.close()
 
 

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QMessageBox
 
 from interchange_review.app import APP_VERSION, CoefficientSettingsDialog, ConfirmPage, InputPage, MainWindow, MotionButton, StepProgress
 from interchange_review.screening import APPROACH_ORDER, ApproachInput
+from interchange_review.theme import DARK_STYLE, FONT_FAMILY, LIGHT, STYLE, apply_application_theme
 
 
 class UiRegressionTest(unittest.TestCase):
@@ -21,7 +22,25 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.8.0")
+        self.assertEqual(APP_VERSION, "3.9.0")
+
+    def test_design_system_uses_required_light_tokens_and_font(self) -> None:
+        self.assertEqual(FONT_FAMILY, "NanumSquare")
+        self.assertEqual(LIGHT["primary"], "#0F3675")
+        self.assertEqual(LIGHT["accent"], "#77A4ED")
+        self.assertEqual(LIGHT["background"], "#F2F2F2")
+        self.assertIn("font-family: 'NanumSquare'", STYLE)
+        self.assertIn("#15191F", DARK_STYLE)
+
+    def test_theme_menu_switches_light_and_dark_without_hiding_content(self) -> None:
+        window = MainWindow()
+        self.assertEqual(sorted(window.theme_actions), ["dark", "light", "system"])
+        window.set_theme("dark", persist=False)
+        self.assertEqual(self.app.property("kgssTheme"), "dark")
+        self.assertTrue(window.theme_actions["dark"].isChecked())
+        self.assertFalse(window.next.isHidden())
+        window.set_theme("light", persist=False)
+        self.assertEqual(self.app.property("kgssTheme"), "light")
 
     def test_saved_project_can_be_loaded_directly_from_a_path(self) -> None:
         source = MainWindow()

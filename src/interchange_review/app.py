@@ -1,4 +1,4 @@
-"""입체화검토 v3.8.0 PySide6 데스크톱 GUI."""
+"""입체화검토 v3.9.0 PySide6 데스크톱 GUI."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import (
-    QAction, QColor, QFont, QFontDatabase, QIcon, QIntValidator,
+    QAction, QActionGroup, QColor, QFont, QIcon, QIntValidator,
     QPainter, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
@@ -61,11 +61,18 @@ from .screening import (
 )
 from .engine import SignalAssumptions
 from .file_association import register_file_association, startup_project_path
+from .theme import (
+    STYLE as DESIGN_STYLE,
+    apply_application_theme,
+    load_application_fonts,
+    palette,
+    saved_theme_preference,
+)
 from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.8.0"
+APP_VERSION = "3.9.0"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 AREA_STYLE = {
@@ -73,6 +80,18 @@ AREA_STYLE = {
     "B": ("#EAF2FF", "#2375E8", "회전차로를 부가하면 평면 신호처리가 가능합니다."),
     "C": ("#FFF1DE", "#D97706", "직진 부가차로 설치 또는 입체교차 처리가 필요합니다."),
     "D": ("#FFE9EC", "#D9363E", "단로부 확폭 또는 추가 도로계획이 필요합니다."),
+}
+AREA_DARK_BACKGROUND = {
+    "A": "#1C3B31",
+    "B": "#243A5A",
+    "C": "#48351F",
+    "D": "#47272B",
+}
+AREA_DARK_COLOR = {
+    "A": "#64D6A2",
+    "B": "#77A4ED",
+    "C": "#FFBE6A",
+    "D": "#FF7B85",
 }
 
 
@@ -148,7 +167,7 @@ class StepProgress(QFrame):
         self.setObjectName("stepProgress")
         self.steps: list[tuple[QFrame, QLabel, QLabel]] = []
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 7, 20, 7)
+        layout.setContentsMargins(24, 8, 24, 8)
         layout.setSpacing(8)
         for number, name in enumerate(self.NAMES, 1):
             step = QFrame()
@@ -318,11 +337,12 @@ class IntersectionPreview(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        colors = palette()
         # 부모 화면과 같은 배경색을 사용해 평면도 위젯의 사각 경계를 없앤다.
-        p.fillRect(self.rect(), QColor("#F5F7FA"))
+        p.fillRect(self.rect(), QColor(colors["background"]))
         center, radius = self._geometry()
         vectors = self._vectors()
-        p.setFont(QFont("Noto Sans KR", 10, QFont.Weight.Bold))
+        p.setFont(QFont("NanumSquare", 10, QFont.Weight.Bold))
         for code in self.available_codes:
             v = vectors[code]
             outer = center + QPointF(v.x() * radius, v.y() * radius)
@@ -334,8 +354,8 @@ class IntersectionPreview(QWidget):
             width = min(max(22.0, schematic_lanes * 7.0), width_cap)
             if self.highlight_codes and not highlighted:
                 width = min(width, 18.0)
-            road_color = QColor("#344054") if active and highlighted else QColor("#D9DFE8")
-            label_color = QColor("#1769D2") if active and highlighted else QColor("#AAB3C1")
+            road_color = QColor(colors["text"]) if active and highlighted else QColor(colors["divider"])
+            label_color = QColor(colors["primary"]) if active and highlighted else QColor(colors["muted"])
             p.setPen(QPen(road_color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
             p.drawLine(center, outer)
             perpendicular = QPointF(-v.y(), v.x())
@@ -344,7 +364,7 @@ class IntersectionPreview(QWidget):
                 offset = -width / 2 + width * lane_index / displayed_lanes
                 start = center + QPointF(perpendicular.x() * offset, perpendicular.y() * offset)
                 end = outer + QPointF(perpendicular.x() * offset, perpendicular.y() * offset)
-                marking = QColor("#FFFFFF") if active and highlighted else QColor("#F4F6F9")
+                marking = QColor(colors["surface"]) if active and highlighted else QColor(colors["background"])
                 p.setPen(QPen(marking, 1.5, Qt.PenStyle.DashLine))
                 p.drawLine(start, end)
             label_gap = 18 if radius < 80 else 27
@@ -352,10 +372,10 @@ class IntersectionPreview(QWidget):
             p.setPen(label_color)
             p.drawText(QRectF(label_pos.x() - 35, label_pos.y() - 14, 70, 28), Qt.AlignmentFlag.AlignCenter, code)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor("#FFFFFF"))
+        p.setBrush(QColor(colors["surface"]))
         hub_radius = min(36.0, max(17.0, radius * .45))
         p.drawEllipse(center, hub_radius, hub_radius)
-        p.setPen(QColor("#2375E8"))
+        p.setPen(QColor(colors["primary"]))
         p.drawText(
             QRectF(center.x() - hub_radius, center.y() - hub_radius / 2, hub_radius * 2, hub_radius),
             Qt.AlignmentFlag.AlignCenter,
@@ -369,7 +389,8 @@ class TopologyPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 16, 24, 14)
+        root.setContentsMargins(24, 24, 24, 16)
+        root.setSpacing(8)
         title = QLabel("교차로 형태를 선택해 주세요")
         title.setObjectName("pageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -571,6 +592,8 @@ class CoefficientSettingsDialog(QDialog):
         self.setWindowTitle("상세 보정 설정")
         self.resize(590, 530)
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
         intro = QLabel(
             "자동 산정은 도로용량편람의 통합 회전식과 중차량식을 적용합니다. "
             "별도 용량분석 계수가 있으면 접근로별 직접 입력을 선택하세요."
@@ -688,8 +711,8 @@ class InputPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 10, 16, 8)
-        root.setSpacing(6)
+        root.setContentsMargins(16, 16, 16, 8)
+        root.setSpacing(8)
         title_row = QHBoxLayout()
         title = QLabel("접근로별 교통량을 입력해 주세요")
         title.setObjectName("pageTitle")
@@ -726,13 +749,13 @@ class InputPage(QWidget):
         self.warning.setMinimumHeight(30)
         root.addWidget(self.warning)
         body = QHBoxLayout()
-        body.setSpacing(12)
+        body.setSpacing(16)
         preview_panel = card()
         preview_panel.setMinimumWidth(280)
         preview_panel.setMaximumWidth(320)
         preview_layout = QVBoxLayout(preview_panel)
-        preview_layout.setContentsMargins(10, 8, 10, 8)
-        preview_layout.setSpacing(4)
+        preview_layout.setContentsMargins(16, 12, 16, 12)
+        preview_layout.setSpacing(8)
         preview_title = QLabel("교차로 미리보기")
         preview_title.setObjectName("panelTitle")
         preview_layout.addWidget(preview_title)
@@ -747,7 +770,7 @@ class InputPage(QWidget):
 
         input_panel = card()
         panel_layout = QVBoxLayout(input_panel)
-        panel_layout.setContentsMargins(10, 8, 10, 8)
+        panel_layout.setContentsMargins(16, 12, 16, 12)
         panel_layout.setSpacing(0)
         panel_head = QHBoxLayout()
         panel_title = QLabel("접근로별 입력")
@@ -911,7 +934,7 @@ class ConfirmPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 14, 24, 12)
+        root.setContentsMargins(24, 16, 24, 16)
         root.setSpacing(8)
         title = QLabel("입력 내용을 확인해 주세요")
         title.setObjectName("pageTitle")
@@ -928,7 +951,7 @@ class ConfirmPage(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
-        self.table.setFont(QFont("Noto Sans KR", 11, QFont.Weight.DemiBold))
+        self.table.setFont(QFont("NanumSquare", 11, QFont.Weight.DemiBold))
         root.addWidget(self.table, 1)
         assumptions = card()
         assumptions.setMinimumHeight(108)
@@ -997,8 +1020,8 @@ class ResultPage(QWidget):
         super().__init__()
         self.result: IntersectionResult | None = None
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 10, 18, 10)
-        root.setSpacing(7)
+        root.setContentsMargins(16, 16, 16, 12)
+        root.setSpacing(8)
         self.hero = QFrame()
         self.hero.setObjectName("resultHero")
         hero_layout = QHBoxLayout(self.hero)
@@ -1032,7 +1055,7 @@ class ResultPage(QWidget):
         self.pairs.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.pairs.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.pairs.setAlternatingRowColors(True)
-        self.pairs.setFont(QFont("Noto Sans KR", 11, QFont.Weight.DemiBold))
+        self.pairs.setFont(QFont("NanumSquare", 11, QFont.Weight.DemiBold))
         self.pairs.setMinimumWidth(230)
         self.pairs.setMinimumHeight(165)
         self.pairs.currentCellChanged.connect(self._pair_selected)
@@ -1069,7 +1092,7 @@ class ResultPage(QWidget):
         self.detail_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.detail_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.detail_table.setShowGrid(True)
-        self.detail_table.setFont(QFont("Noto Sans KR", 9, QFont.Weight.DemiBold))
+        self.detail_table.setFont(QFont("NanumSquare", 9, QFont.Weight.DemiBold))
         self.detail_table.setFixedHeight(225)
         side.addWidget(self.detail_table)
         self.copy_button = MotionButton("클립보드에 복사")
@@ -1091,6 +1114,9 @@ class ResultPage(QWidget):
     def set_result(self, result: IntersectionResult) -> None:
         self.result = result
         bg, color, message = AREA_STYLE[result.area.value]
+        if str(QApplication.instance().property("kgssTheme") or "light") == "dark":
+            bg = AREA_DARK_BACKGROUND[result.area.value]
+            color = AREA_DARK_COLOR[result.area.value]
         self.hero.setStyleSheet(f"QFrame#resultHero {{ background:{bg}; border:1px solid {color}; border-radius:18px; }}")
         self.area.setStyleSheet(f"color:{color};")
         self.area.setText(f"판정: 영역 {result.area.value}")
@@ -1107,8 +1133,8 @@ class ResultPage(QWidget):
             pair_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             area_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if pair is result.critical_pair:
-                pair_item.setBackground(QColor("#EAF2FF"))
-                area_item.setBackground(QColor("#EAF2FF"))
+                pair_item.setBackground(QColor(palette()["accent_soft"]))
+                area_item.setBackground(QColor(palette()["accent_soft"]))
                 font = pair_item.font()
                 font.setBold(True)
                 pair_item.setFont(font)
@@ -1201,6 +1227,8 @@ class AppendixTab(QWidget):
     def __init__(self) -> None:
         super().__init__()
         root = QHBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(16)
         nav = QListWidget()
         install_auto_scrollbar(nav)
         nav.addItems([
@@ -1293,15 +1321,18 @@ class MainWindow(QMainWindow):
         for page in (self.topology, self.input, self.confirm, self.results):
             self.pages.addWidget(page)
         review_layout.addWidget(self.pages, 1)
-        nav = QHBoxLayout()
-        nav.setContentsMargins(18, 4, 18, 8)
+        action_bar = QFrame()
+        action_bar.setObjectName("actionBar")
+        nav = QHBoxLayout(action_bar)
+        nav.setContentsMargins(24, 8, 24, 12)
         self.back = MotionButton("이전")
+        self.back.setObjectName("tertiary")
         self.next = MotionButton("다음")
         self.next.setObjectName("primary")
         nav.addWidget(self.back)
         nav.addStretch()
         nav.addWidget(self.next)
-        review_layout.addLayout(nav)
+        review_layout.addWidget(action_bar)
         self.tabs.addTab(review, "검토")
         self.tabs.addTab(AppendixTab(), "지침·공식")
         self.back.clicked.connect(self.go_back)
@@ -1331,6 +1362,20 @@ class MainWindow(QMainWindow):
             action.setShortcut(shortcut)
             action.triggered.connect(slot)
             project.addAction(action)
+        view_menu = self.menuBar().addMenu("보기")
+        theme_menu = view_menu.addMenu("테마")
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        self.theme_actions: dict[str, QAction] = {}
+        current = saved_theme_preference()
+        for preference, label in (("system", "시스템 설정"), ("light", "라이트"), ("dark", "다크")):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(preference == current)
+            action.triggered.connect(lambda checked, value=preference: self.set_theme(value) if checked else None)
+            theme_group.addAction(action)
+            theme_menu.addAction(action)
+            self.theme_actions[preference] = action
         help_menu = self.menuBar().addMenu("도움말")
         guide = QAction("지침·공식", self)
         guide.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
@@ -1339,6 +1384,21 @@ class MainWindow(QMainWindow):
         update = QAction("업데이트 확인", self)
         update.triggered.connect(lambda: self.updater.check(manual=True))
         help_menu.addActions([guide, update, about])
+
+    def set_theme(self, preference: str, *, persist: bool = True) -> None:
+        resolved = apply_application_theme(QApplication.instance(), preference, persist=persist)
+        if hasattr(self, "theme_actions"):
+            for value, action in self.theme_actions.items():
+                action.setChecked(value == preference)
+        self.topology.preview.update()
+        self.input.preview.update()
+        self.results.pair_preview.update()
+        if self.results.result is not None:
+            self.results.set_result(self.results.result)
+        self.statusBar().showMessage(
+            f"{'다크' if resolved == 'dark' else '라이트'} 테마를 적용했습니다.   ·   {APP_AUTHOR}",
+            3500,
+        )
 
     def _page_changed(self, index: int) -> None:
         self.step_label.set_step(index)
@@ -1542,95 +1602,39 @@ class MainWindow(QMainWindow):
             self,
             "프로그램 정보",
             f"<h2>{APP_NAME}</h2><p>v{APP_VERSION}</p><p>{APP_AUTHOR}</p>"
-            "<p><b>이메일</b>: yuhyun1245@gmail.com</p>"
+            "<p><b>이메일</b>: dmecyh@naver.com</p>"
             "<p>국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작하였습니다.</p>"
             "<p>본 결과는 기본계획 단계의 개략검토이며 상세 교통분석을 대신하지 않습니다.</p>",
         )
 
 
-STYLE = """
-* { font-family: 'Noto Sans KR'; font-size: 10pt; color: #253044; }
-QMainWindow, QWidget { background: #F5F7FA; }
-QLabel { background: transparent; }
-QMenuBar, QMenu, QStatusBar { background: white; }
-QTabWidget::pane { border: 0; }
-QTabBar::tab { background: white; padding: 9px 20px; color: #657087; }
-QTabBar::tab:selected { color: #1769D2; border-bottom: 3px solid #2375E8; font-weight: 700; }
-QFrame#card, QGroupBox { background: white; border: 1px solid #E0E6EE; border-radius: 12px; padding: 5px; }
-QLabel#pageTitle { font-size: 18pt; font-weight: 800; color: #172033; }
-QLabel#approachCode { font-size: 14pt; font-weight: 800; color: #1769D2; }
-QLabel#panelTitle { font-size: 12pt; font-weight: 800; color: #172033; padding: 2px; }
-QLabel#sectionTitle { font-weight: 800; color: #172033; padding: 0px; }
-QLabel#inputHeader { color: #526079; font-size: 9pt; font-weight: 800; }
-QLabel#trafficSummary { background: #EAF2FF; color: #1769D2; border-radius: 10px; padding: 9px; font-size: 13pt; font-weight: 900; }
-QLabel#grandTotal { font-size: 14pt; font-weight: 800; color: #172033; }
-QLabel#total { font-weight: 700; color: #1769D2; }
-QLabel#warning { background: #FFF8E6; color: #8A5A00; padding: 6px 10px; border-radius: 8px; }
-QLabel#warning[status="ok"] { background: #E8F8F0; color: #10784B; }
-QLabel#hint { padding: 6px; color: #1769D2; font-weight: 700; }
-QLabel#hint[invalid='true'] { color: #C9363E; background: #FFF0F1; }
-QFrame#stepProgress { background: white; border-bottom: 1px solid #E7EBF0; }
-QFrame#progressStep { background: transparent; border: 1px solid transparent; border-radius: 9px; }
-QFrame#progressStep[state="current"] { background: #EAF2FF; border-color: #C5DCFC; }
-QLabel#progressBadge { background: #EDF1F6; color: #7B8798; border-radius: 11px; font-size: 9pt; font-weight: 800; }
-QLabel#progressBadge[state="current"] { background: #2375E8; color: white; }
-QLabel#progressBadge[state="done"] { background: #DDF4E8; color: #128253; }
-QLabel#progressText { color: #8994A5; font-size: 9pt; font-weight: 700; }
-QLabel#progressText[state="current"] { color: #1769D2; font-weight: 900; }
-QLabel#progressText[state="done"] { color: #344054; }
-QLabel#resultArea { font-size: 22pt; font-weight: 900; }
-QLabel#criticalPair { color: #1769D2; font-weight: 800; padding: 4px; }
-QLabel#sideTitle { font-size: 11pt; font-weight: 800; color: #172033; }
-QLabel#pairDetail { font-size: 9pt; font-weight: 600; color: #354052; }
-QLabel#confirmOverview { font-size: 13pt; font-weight: 800; color: #172033; padding: 4px; }
-QLabel#unit { color: #748095; font-size: 9pt; }
-QFrame#resultHero { padding: 5px; }
-QFrame#approachRow { background: #FFFFFF; border-top: 1px solid #E8EDF4; }
-QFrame#approachRow[alternate="true"] { background: #F8FAFD; }
-QPushButton { background: white; border: 1px solid #DDE3EC; border-radius: 9px; padding: 7px 12px; font-weight: 700; }
-QPushButton:hover { background: #F0F5FF; border-color: #8CB9F5; }
-QPushButton:checked, QPushButton#primary { background: #2375E8; color: white; border-color: #2375E8; }
-QPushButton:pressed { background: #DCEAFF; border-color: #2375E8; }
-QPushButton#primary:pressed { background: #155FC7; border-color: #155FC7; }
-QPushButton:focus { border: 2px solid #2375E8; }
-QPushButton:disabled { background: #E9EDF2; color: #A4ACB8; border-color: #E9EDF2; }
-QPushButton#stepButton { padding: 0; min-width: 28px; max-width: 28px; font-size: 14pt; font-weight: 900; }
-QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit { background: #FFFFFF; border: 1px solid #CFD7E3; border-radius: 7px; padding: 5px; }
-QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QLineEdit:focus { border: 2px solid #2375E8; background: #FFFFFF; }
-QLineEdit#trafficEditor { min-width: 44px; }
-QListWidget, QTextBrowser, QScrollArea { background: white; border: 1px solid #E1E6EE; border-radius: 12px; padding: 6px; }
-QListWidget::item { padding: 11px; border-radius: 8px; }
-QListWidget::item:selected { background: #E9F2FF; color: #1769D2; }
-QTableWidget { background: white; alternate-background-color: #F8FAFD; border: 1px solid #D8E0EA; gridline-color: #D8E0EA; border-radius: 9px; }
-QHeaderView::section { background: #E9EEF5; color: #253044; border: 0; border-right: 1px solid #CED7E2; border-bottom: 1px solid #C7D1DE; padding: 8px; font-size: 11pt; font-weight: 900; }
-QTableWidget::item { border-bottom: 1px solid #E1E6ED; padding: 6px; font-weight: 600; }
-QTableWidget::item:selected { background: #DDEBFF; color: #1769D2; }
-QScrollBar#autoFadeScrollBar:vertical { background: transparent; width: 10px; margin: 3px 2px; }
-QScrollBar#autoFadeScrollBar::handle:vertical { background: #9AA7B8; min-height: 34px; border-radius: 3px; }
-QScrollBar#autoFadeScrollBar::handle:vertical:hover { background: #6F7E92; }
-QScrollBar#autoFadeScrollBar::add-line:vertical, QScrollBar#autoFadeScrollBar::sub-line:vertical { height: 0; border: 0; }
-QScrollBar#autoFadeScrollBar::add-page:vertical, QScrollBar#autoFadeScrollBar::sub-page:vertical { background: transparent; }
-"""
+# 기존 검증 도구에서 STYLE을 가져올 수 있도록 공개한다.
+STYLE = DESIGN_STYLE
 
 
 def main() -> int:
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
     startup_project = startup_project_path(sys.argv[1:])
     app = QApplication(sys.argv)
-    font_path = resource_path("NotoSansKR.ttf")
-    if font_path.exists():
-        QFontDatabase.addApplicationFont(str(font_path))
-        app.setFont(QFont("Noto Sans KR", 10))
+    load_application_fonts(resource_path)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("NYH")
     app.setStyle("Fusion")
-    app.setStyleSheet(STYLE)
+    apply_application_theme(app, saved_theme_preference())
     icon = resource_path("interchange.ico")
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))
     window = MainWindow()
     window.show()
+    try:
+        app.styleHints().colorSchemeChanged.connect(
+            lambda *_: window.set_theme("system", persist=False)
+            if saved_theme_preference() == "system"
+            else None
+        )
+    except AttributeError:
+        pass
     if getattr(sys, "frozen", False):
         register_file_association()
     if startup_project is not None:

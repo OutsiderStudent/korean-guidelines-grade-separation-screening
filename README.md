@@ -1,9 +1,9 @@
 # Korean Guidelines-Based Grade Separation Screening
 
 **Traffic Volume and Capacity Assessment**  
-한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.8.0**
+한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.9.0**
 
-made by NYH · yuhyun1245@gmail.com
+made by NYH · dmecyh@naver.com
 
 국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작한 입체교차 개략검토 프로그램입니다.
 
@@ -22,7 +22,8 @@ made by NYH · yuhyun1245@gmail.com
 - 프로젝트 새로 만들기·열기·저장·다른 이름으로 저장(`.igr3`)
 - `.igr3` 파일 더블클릭 시 K-GSS 실행과 동시에 해당 프로젝트 자동 불러오기
 - 지침 원문 페이지, 적용 공식, 출처와 프로그램 가정을 확인하는 `지침·공식` 탭
-- Noto Sans KR 글꼴과 전용 아이콘을 포함한 단일 portable EXE
+- NanumSquare Light·Regular·Bold·ExtraBold와 전용 아이콘을 포함한 단일 portable EXE
+- 네이비 중심의 공통 디자인 시스템과 시스템·라이트·다크 테마
 - 실행 시 GitHub Release의 최신 버전을 자동 확인하고 SHA-256 검증 후 업데이트
 - 현재 단계 표시, 화면 전환 페이드, 마우스·키보드 버튼 축소·스프링 복귀 효과 (`KGSS_REDUCE_MOTION=1`로 모션 끄기)
 
@@ -55,6 +56,6 @@ python validation\render_ui.py
 .\build.ps1
 ```
 
-빌드 결과: `dist\K-GSS_v3.8.0.exe`
+빌드 결과: `dist\K-GSS_v3.9.0.exe`
 
-Noto Sans KR은 SIL Open Font License 1.1로 포함되며 라이선스 원문은 `assets/NotoSansKR-OFL.txt`에 있습니다.
+NanumSquare는 네이버 공식 배포본을 포함하며 저작권 안내는 `assets/NanumSquare-LICENSE.txt`에 있습니다.

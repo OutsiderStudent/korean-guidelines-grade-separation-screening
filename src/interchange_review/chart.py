@@ -31,7 +31,7 @@ AREA_COLORS = {
 def _font(pixel_size: float, scale: float, weight=QFont.Weight.Normal) -> QFont:
     """QImage의 300 dpi 메타데이터와 무관하게 물리 크기가 일정한 글꼴."""
 
-    font = QFont("Noto Sans KR")
+    font = QFont("NanumSquare")
     font.setPixelSize(max(9, int(pixel_size * scale)))
     font.setWeight(weight)
     return font
@@ -142,7 +142,7 @@ def render_pair_chart(pair: PairResult, size: int = 839, detailed: bool = False)
         value = int(maximum * index / 5)
         xp = _map(value, 0, plot, maximum)
         yp = _map(0, value, plot, maximum)
-        # Noto Sans KR의 쉼표는 글자 기준선 아래로 내려간다. 눈금 영역이 짧으면
+        # 쉼표는 글자 기준선 아래로 내려간다. 눈금 영역이 짧으면
         # 아랫부분이 잘려 마침표처럼 보이므로 충분한 높이에 수직 중앙 배치한다.
         painter.drawText(
             QRectF(xp.x() - 50 * scale, plot.bottom() + 3 * scale, 100 * scale, 38 * scale),
