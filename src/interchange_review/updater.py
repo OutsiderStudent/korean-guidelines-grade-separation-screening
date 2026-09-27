@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import shutil
 import sys
 import tempfile
+import ctypes
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,9 +42,53 @@ class ReleaseInfo:
     asset_url: str
     digest: str
     size: int
+    architecture: str
+    asset_name: str
 
 
-def parse_release(payload: bytes | str) -> ReleaseInfo:
+def _normalize_architecture(value: str) -> str:
+    normalized = value.strip().lower().replace("-", "_")
+    if normalized in {"arm64", "aarch64"}:
+        return "arm64"
+    if normalized in {"amd64", "x86_64", "x64"}:
+        return "x64"
+    return normalized or "x64"
+
+
+def process_architecture() -> str:
+    """현재 프로세스의 CPU 아키텍처를 반환한다."""
+
+    return _normalize_architecture(platform.machine())
+
+
+def native_windows_architecture() -> str:
+    """에뮬레이션 여부와 관계없이 Windows 장치의 네이티브 아키텍처를 반환한다."""
+
+    if sys.platform == "win32":
+        try:
+            process_machine = ctypes.c_ushort()
+            native_machine = ctypes.c_ushort()
+            is_wow64_process2 = ctypes.windll.kernel32.IsWow64Process2
+            ok = is_wow64_process2(
+                ctypes.windll.kernel32.GetCurrentProcess(),
+                ctypes.byref(process_machine),
+                ctypes.byref(native_machine),
+            )
+            if ok:
+                machine_names = {0xAA64: "arm64", 0x8664: "x64", 0x014C: "x86"}
+                detected = machine_names.get(native_machine.value)
+                if detected:
+                    return detected
+        except (AttributeError, OSError):
+            pass
+    return _normalize_architecture(
+        os.environ.get("PROCESSOR_ARCHITEW6432")
+        or os.environ.get("PROCESSOR_ARCHITECTURE")
+        or platform.machine()
+    )
+
+
+def parse_release(payload: bytes | str, architecture: str | None = None) -> ReleaseInfo:
     """GitHub latest-release 응답에서 K-GSS EXE 자산을 선택한다."""
 
     data = json.loads(payload)
@@ -51,10 +97,17 @@ def parse_release(payload: bytes | str) -> ReleaseInfo:
     if parsed is None:
         raise ValueError("최신 릴리스의 버전 형식이 올바르지 않습니다.")
     version = ".".join(str(part) for part in parsed)
-    expected_name = f"K-GSS_v{version}.exe"
-    asset = next((item for item in data.get("assets", []) if item.get("name") == expected_name), None)
+    target_arch = _normalize_architecture(architecture or native_windows_architecture())
+    if target_arch == "arm64":
+        expected_names = [f"K-GSS_v{version}_windows-arm64.exe"]
+    else:
+        expected_names = [f"K-GSS_v{version}_windows-x64.exe", f"K-GSS_v{version}.exe"]
+    asset = next(
+        (item for name in expected_names for item in data.get("assets", []) if item.get("name") == name),
+        None,
+    )
     if asset is None:
-        raise ValueError(f"릴리스에 {expected_name} 파일이 없습니다.")
+        raise ValueError(f"릴리스에 {target_arch}용 실행 파일이 없습니다.")
     return ReleaseInfo(
         version=version,
         title=str(data.get("name") or tag),
@@ -63,6 +116,8 @@ def parse_release(payload: bytes | str) -> ReleaseInfo:
         asset_url=str(asset.get("browser_download_url") or ""),
         digest=str(asset.get("digest") or ""),
         size=int(asset.get("size") or 0),
+        architecture=target_arch,
+        asset_name=str(asset.get("name") or expected_names[0]),
     )
 
 
@@ -106,7 +161,12 @@ class UpdateController(QObject):
             latest = version_tuple(release.version)
             if current is None or latest is None:
                 raise ValueError("버전을 비교할 수 없습니다.")
-            if latest <= current:
+            architecture_migration = (
+                latest == current
+                and release.architecture == "arm64"
+                and process_architecture() != "arm64"
+            )
+            if latest < current or (latest == current and not architecture_migration):
                 if self._manual:
                     QMessageBox.information(
                         self.parent_widget,
@@ -114,18 +174,21 @@ class UpdateController(QObject):
                         f"현재 v{self.current_version}이 최신 버전입니다.",
                     )
                 return
-            self._offer(release)
+            self._offer(release, architecture_migration)
         except (ValueError, RuntimeError, json.JSONDecodeError) as error:
             if self._manual:
                 QMessageBox.warning(self.parent_widget, "업데이트 확인 실패", str(error))
         finally:
             reply.deleteLater()
 
-    def _offer(self, release: ReleaseInfo) -> None:
+    def _offer(self, release: ReleaseInfo, architecture_migration: bool = False) -> None:
         box = QMessageBox(self.parent_widget)
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle("업데이트")
-        box.setText(f"K-GSS v{release.version} 업데이트가 있습니다.")
+        if architecture_migration:
+            box.setText("이 장치에 맞는 K-GSS ARM64 최적화 버전이 있습니다.")
+        else:
+            box.setText(f"K-GSS v{release.version} 업데이트가 있습니다.")
         notes = release.notes.strip()
         if len(notes) > 900:
             notes = notes[:900].rstrip() + "…"
@@ -145,7 +208,7 @@ class UpdateController(QObject):
             return
         update_dir = Path(tempfile.gettempdir()) / "K-GSS-updates"
         update_dir.mkdir(parents=True, exist_ok=True)
-        self._download_path = update_dir / f"K-GSS_v{release.version}.exe.part"
+        self._download_path = update_dir / f"{release.asset_name}.part"
         self._download_file = self._download_path.open("wb")
         self._release = release
         request = QNetworkRequest(QUrl(release.asset_url))
@@ -214,12 +277,12 @@ class UpdateController(QObject):
             QMessageBox.information(self.parent_widget, "업데이트", "개발 실행 중이므로 GitHub 릴리스를 열었습니다.")
             return
         current = Path(sys.executable).resolve()
-        target = current.parent / f"K-GSS_v{release.version}.exe"
+        target = current.parent / release.asset_name
         try:
             shutil.copy2(source, target)
         except OSError:
             downloads = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation))
-            target = downloads / f"K-GSS_v{release.version}.exe"
+            target = downloads / release.asset_name
             shutil.copy2(source, target)
         source.unlink(missing_ok=True)
         choice = QMessageBox.question(

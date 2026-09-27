@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
 a = Analysis(
     ["launcher.py"],
     pathex=["src"],
@@ -30,7 +32,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="K-GSS_v3.9.0",
+    name=os.environ.get("KGSS_BUILD_NAME", "K-GSS_v3.9.1"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

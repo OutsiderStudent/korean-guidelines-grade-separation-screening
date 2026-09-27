@@ -1,7 +1,7 @@
 # Korean Guidelines-Based Grade Separation Screening
 
 **Traffic Volume and Capacity Assessment**  
-한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.9.0**
+한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.9.1**
 
 made by NYH · dmecyh@naver.com
 
@@ -24,7 +24,7 @@ made by NYH · dmecyh@naver.com
 - 지침 원문 페이지, 적용 공식, 출처와 프로그램 가정을 확인하는 `지침·공식` 탭
 - NanumSquare Light·Regular·Bold·ExtraBold와 전용 아이콘을 포함한 단일 portable EXE
 - 네이비 중심의 공통 디자인 시스템과 시스템·라이트·다크 테마
-- 실행 시 GitHub Release의 최신 버전을 자동 확인하고 SHA-256 검증 후 업데이트
+- 실행 시 GitHub Release의 최신 버전을 자동 확인하고 SHA-256 검증 후 CPU에 맞는 x64·ARM64 버전으로 업데이트
 - 현재 단계 표시, 화면 전환 페이드, 마우스·키보드 버튼 축소·스프링 복귀 효과 (`KGSS_REDUCE_MOTION=1`로 모션 끄기)
 
 ## 계산 원칙과 출처 구분
@@ -56,6 +56,8 @@ python validation\render_ui.py
 .\build.ps1
 ```
 
-빌드 결과: `dist\K-GSS_v3.9.0.exe`
+로컬 x64 빌드 결과: `dist\K-GSS_v3.9.1.exe`
+
+GitHub Release에는 `K-GSS_v3.9.1_windows-x64.exe`와 `K-GSS_v3.9.1_windows-arm64.exe`를 함께 제공합니다.
 
 NanumSquare는 네이버 공식 배포본을 포함하며 저작권 안내는 `assets/NanumSquare-LICENSE.txt`에 있습니다.

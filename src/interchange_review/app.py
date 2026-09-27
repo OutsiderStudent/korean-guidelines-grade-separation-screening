@@ -72,7 +72,7 @@ from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.9.0"
+APP_VERSION = "3.9.1"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 AREA_STYLE = {

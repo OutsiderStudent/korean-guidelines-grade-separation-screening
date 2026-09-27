@@ -22,7 +22,7 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.9.0")
+        self.assertEqual(APP_VERSION, "3.9.1")
 
     def test_design_system_uses_required_light_tokens_and_font(self) -> None:
         self.assertEqual(FONT_FAMILY, "NanumSquare")
