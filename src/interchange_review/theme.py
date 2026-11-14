@@ -167,7 +167,7 @@ QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover, QLineEdit:hover { backgro
 QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QLineEdit:focus { border: 1px solid @FOCUS@; background: @SURFACE@; }
 QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled, QLineEdit:disabled { background: @DISABLED@; color: @DISABLED_TEXT@; }
 QLineEdit#trafficEditor { min-width: 44px; }
-QCheckBox { spacing: 7px; }
+QCheckBox { spacing: 7px; background: transparent; }
 QListWidget, QTextBrowser, QScrollArea { background: @SURFACE@; color: @TEXT@; border: 0; border-radius: 14px; padding: 6px; }
 QListWidget::item { padding: 10px 12px; border-radius: 8px; }
 QListWidget::item:hover { background: @HOVER@; }

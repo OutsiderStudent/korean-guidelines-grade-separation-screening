@@ -1,6 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+from pathlib import Path
+
+runtime_hooks = []
+if os.environ.get("KGSS_BUILD_CHANNEL") == "preview":
+    hook = Path("build/detail_preview_runtime.py")
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text("import sys\nsys._kgss_preview = True\n", encoding="utf-8")
+    runtime_hooks.append(str(hook.resolve()))
 
 a = Analysis(
     ["launcher.py"],
@@ -10,7 +18,7 @@ a = Analysis(
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=runtime_hooks,
     excludes=[],
     noarchive=False,
     optimize=0,
@@ -32,7 +40,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name=os.environ.get("KGSS_BUILD_NAME", "K-GSS_v5.0.1"),
+    name=os.environ.get("KGSS_BUILD_NAME", "K-GSS_v5.1.0"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

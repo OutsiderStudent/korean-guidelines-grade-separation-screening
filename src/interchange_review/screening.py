@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 from itertools import combinations
 
 from .engine import (
@@ -21,6 +21,7 @@ from .engine import (
 )
 from .khcm2013 import combined_turn_adjustment_factor, heavy_vehicle_adjustment_factor
 from .khcm2026 import automatic_factors, right_turn_equivalent
+from .detail import RoadConditions
 
 
 # 진행방향 표기를 평면도의 북측 접근로부터 시계방향으로 정렬한다.
@@ -32,6 +33,11 @@ OPPOSITES = {
     frozenset(("SWB", "NEB")),
 }
 AREA_RANK = {Area.A: 0, Area.B: 1, Area.C: 2, Area.D: 3}
+
+
+def uses_guideline_diagram(codes) -> bool:
+    legs = set(codes)
+    return len(legs) == 4 and sum(axis <= legs for axis in OPPOSITES) == 2
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,7 @@ class CoefficientAssumptions:
     right_turn_mode: str = "green"
     legacy: bool = False
     red_right_percent: float | None = None
+    approach_conditions: dict[str, dict] = field(default_factory=dict)
 
     @property
     def applied_right_equivalent(self) -> float:
@@ -146,6 +153,15 @@ def calculate_approach(
 ) -> ApproachResult:
     assumptions = assumptions or CoefficientAssumptions()
     signal = signal or SignalAssumptions()
+    detailed = data.code in assumptions.approach_conditions and not assumptions.legacy
+    if detailed and data.direct_turn_factor is None:
+        road = RoadConditions(**assumptions.approach_conditions[data.code])
+        assumptions = replace(assumptions, lane_width_m=road.lane_width_m,
+                              grade_percent=road.grade_percent,
+                              left_equivalent=road.left_equivalent,
+                              right_equivalent=road.right_equivalent,
+                              right_turn_mode=road.right_turn_mode,
+                              red_right_percent=road.red_right_percent)
     if data.direct_turn_factor is not None:
         turn_factor = data.direct_turn_factor
         heavy_factor = data.direct_heavy_factor
@@ -178,7 +194,7 @@ def calculate_approach(
         lane_width_factor = factors.lane_width
         turn_factor = factors.roadway_and_movement
         heavy_factor = factors.heavy_vehicle
-        factor_mode = "개략 보정"
+        factor_mode = "접근로별 보정" if detailed else "개략 보정"
     capacity_c = 1_800.0 * data.lanes
     p_raw = capacity_c * turn_factor * heavy_factor * signal.utilization_factor
     p_prime_raw = (
@@ -247,7 +263,7 @@ def analyze_intersection(
         critical_pair=critical,
         area=critical.classification.area,
         total_traffic=sum(item.input.total for item in results),
-        is_extended_method=len(approaches) != 4,
+        is_extended_method=not uses_guideline_diagram(by_code),
     )
 
 

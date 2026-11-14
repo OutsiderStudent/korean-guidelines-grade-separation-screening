@@ -57,7 +57,10 @@ from .screening import (
     CoefficientAssumptions,
     IntersectionResult,
     analyze_intersection,
+    uses_guideline_diagram,
 )
+from .phase_review import check_phase_plan
+from .phase_dialog import SignalPlanDialog, SignalResultPage
 from .engine import SignalAssumptions
 from .khcm2026 import right_turn_equivalent
 from .file_association import register_file_association, startup_project_path
@@ -72,7 +75,9 @@ from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "5.0.1"
+APP_VERSION = "5.1.0"
+PREVIEW_BUILD = bool(getattr(sys, "_kgss_preview", False))
+WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}" + (" · 신호계획 검토본" if PREVIEW_BUILD else "")
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 DEFAULT_DIRECT_FACTORS = (0.85, 0.85)
@@ -196,7 +201,6 @@ class StepProgress(QFrame):
                 widget.setProperty("state", state)
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
-            badge.setText("✓" if number < index else str(number + 1))
             step.setAccessibleName(f"{label.text()}, {state}")
 
 
@@ -392,11 +396,11 @@ class TopologyPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 16)
         root.setSpacing(8)
-        title = QLabel("교차로 형태를 설정해 주세요")
+        title = QLabel("교차로 형태")
         title.setObjectName("pageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(title)
-        instruction = QLabel("평면도의 접근로를 클릭해 켜거나 끄세요. 꺼진 접근로는 흐리게 표시됩니다.")
+        instruction = QLabel("평면도에서 사용할 접근로를 선택하세요.")
         instruction.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(instruction)
         self.preview = IntersectionPreview()
@@ -627,7 +631,7 @@ class NumericField(QDoubleSpinBox):
         self.lineEdit().setGeometry(self.rect().adjusted(8, 2, -8, -2))
 
 
-class CoefficientSettingsDialog(QDialog):
+class _CommonSettingsDialog(QDialog):
     """기본 화면을 복잡하게 만들지 않는 선택형 상세 계산 설정."""
 
     def __init__(self, codes: list[str], settings: dict, direct: dict[str, tuple[float, float]], parent=None) -> None:
@@ -837,6 +841,12 @@ class CoefficientSettingsDialog(QDialog):
         return settings, direct
 
 
+def CoefficientSettingsDialog(*args, **kwargs):
+    """Load the sectioned editor lazily; keep the public construction API."""
+    from .detail_dialog import DetailSettingsDialog
+    return DetailSettingsDialog(*args, **kwargs)
+
+
 class InputPage(QWidget):
     changed = Signal()
 
@@ -846,7 +856,7 @@ class InputPage(QWidget):
         root.setContentsMargins(16, 16, 16, 8)
         root.setSpacing(8)
         title_row = QHBoxLayout()
-        title = QLabel("접근로별 교통량을 입력해 주세요")
+        title = QLabel("접근로별 교통량")
         title.setObjectName("pageTitle")
         title_row.addWidget(title)
         title_row.addStretch()
@@ -865,6 +875,11 @@ class InputPage(QWidget):
             "effective_green": 36.0,
             "left_per_cycle": 2.0,
             "utilization": 0.9,
+            "detail_scope": "common",
+            "approach_conditions": {},
+            "lane_analysis": {},
+            "operating_cycle": None,
+            "direct_source": "",
         }
         self.direct_factors: dict[str, tuple[float, float]] = {}
         self.advanced_button = MotionButton("상세 설정")
@@ -946,7 +961,8 @@ class InputPage(QWidget):
         self.advanced_button.clicked.connect(self._show_settings)
 
     def _show_settings(self) -> None:
-        dialog = CoefficientSettingsDialog(list(self.cards), self.calculation_settings, self.direct_factors, self)
+        dialog = CoefficientSettingsDialog(list(self.cards), self.calculation_settings, self.direct_factors, self,
+                                          traffic=[item.value() for item in self.cards.values()])
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.calculation_settings, self.direct_factors = dialog.values()
             self.changed.emit()
@@ -996,7 +1012,7 @@ class InputPage(QWidget):
         self.preview.set_data(list(self.cards), {code: item.lanes.value() for code, item in self.cards.items()})
         self.changed.emit()
 
-    def values(self) -> list[ApproachInput]:
+    def values(self, *, validate: bool = True) -> list[ApproachInput]:
         values = []
         direct_mode = self.calculation_settings["mode"] == "direct"
         for code in APPROACH_ORDER:
@@ -1004,8 +1020,16 @@ class InputPage(QWidget):
                 continue
             value = self.cards[code].value()
             if direct_mode:
-                turn, heavy = self.direct_factors.get(code, DEFAULT_DIRECT_FACTORS)
-                value = replace(value, direct_turn_factor=turn, direct_heavy_factor=heavy)
+                factors = self.direct_factors.get(code)
+                if factors is None or min(factors) <= 0:
+                    if validate:
+                        raise ValueError(f"{code}: 상세 설정에서 외부 분석 계수를 입력해 주세요.")
+                else:
+                    value = replace(value, direct_turn_factor=factors[0], direct_heavy_factor=factors[1])
+            if (validate and self.calculation_settings["mode"] == "auto"
+                    and self.calculation_settings["detail_scope"] == "approach"
+                    and code not in self.calculation_settings["approach_conditions"]):
+                raise ValueError(f"{code}: 추가된 접근로의 도로·회전 조건을 상세 설정에서 확인해 주세요.")
             values.append(value)
         return values
 
@@ -1020,6 +1044,8 @@ class InputPage(QWidget):
             right_turn_mode=str(self.calculation_settings["right_turn_mode"]),
             red_right_percent=self.calculation_settings["red_right_percent"],
             legacy=self.calculation_settings["mode"] == "legacy",
+            approach_conditions=self.calculation_settings["approach_conditions"]
+            if self.calculation_settings["mode"] == "auto" and self.calculation_settings["detail_scope"] == "approach" else {},
         )
 
     def signal_assumptions(self) -> SignalAssumptions:
@@ -1068,6 +1094,11 @@ class InputPage(QWidget):
             effective_green=36.0,
             left_per_cycle=2.0,
             utilization=0.9,
+            detail_scope="common",
+            approach_conditions={},
+            lane_analysis={},
+            operating_cycle=None,
+            direct_source="",
         )
         self.direct_factors = {}
 
@@ -1081,7 +1112,7 @@ class ConfirmPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 16, 24, 16)
         root.setSpacing(8)
-        title = QLabel("입력 내용을 확인해 주세요")
+        title = QLabel("입력 확인")
         title.setObjectName("pageTitle")
         root.addWidget(title)
         self.overview = QLabel()
@@ -1098,7 +1129,7 @@ class ConfirmPage(QWidget):
         self.table.setShowGrid(True)
         self.table.setFont(QFont("NanumSquare", 11, QFont.Weight.DemiBold))
         root.addWidget(self.table, 1)
-        assumptions = card()
+        assumptions = self.guideline_settings = card()
         assumptions.setMinimumHeight(108)
         box = QVBoxLayout(assumptions)
         box.setContentsMargins(14, 8, 14, 10)
@@ -1111,6 +1142,12 @@ class ConfirmPage(QWidget):
         self.assumption_text.setMinimumHeight(64)
         box.addWidget(self.assumption_text)
         root.addWidget(assumptions)
+        self.method_note = QLabel()
+        self.method_note.setWordWrap(True)
+        root.addWidget(self.method_note)
+        self.use_signal = QCheckBox("신호계획으로 검토")
+        self.use_signal.toggled.connect(self._update_method)
+        root.addWidget(self.use_signal)
         root.addStretch()
 
     def set_values(
@@ -1124,6 +1161,9 @@ class ConfirmPage(QWidget):
         signal = signal or SignalAssumptions()
         total = sum(x.total for x in values)
         self.overview.setText(f"{count}지 교차로    ·    전체 유입교통량 {total:,} 대/시")
+        self.standard_shape = uses_guideline_diagram(item.code for item in values)
+        self.use_signal.setVisible(self.standard_shape)
+        self._update_method()
         self.table.setRowCount(len(values))
         for row, value in enumerate(values):
             texts = [
@@ -1142,18 +1182,22 @@ class ConfirmPage(QWidget):
             self.table.setRowHeight(row, 40)
         table_height = self.table.horizontalHeader().height() + len(values) * 40 + 4
         self.table.setFixedHeight(table_height)
+        if not self.standard_shape:
+            return
         direct = any(value.direct_turn_factor is not None for value in values)
         factor_line = (
             "보정계수: 접근로별 직접 입력값을 적용합니다."
             if direct
             else "보정계수: 저장 파일의 기존 자동식을 재현합니다."
             if assumptions.legacy
+            else "접근로별 도로·회전 조건을 적용합니다. 상세 설정의 확인·근거에서 계수를 확인하세요."
+            if assumptions.approach_conditions
             else "자동 보정계수: 차로폭·경사·이동류·중차량식, "
             f"좌회전 E={assumptions.left_equivalent:.2f}, 우회전 E={assumptions.applied_right_equivalent:.2f}, "
             f"EHV={assumptions.heavy_equivalent:.2f}, 폭 {assumptions.lane_width_m:.2f}m, "
             f"경사 {assumptions.grade_percent:.2f}%."
         )
-        if not direct and not assumptions.legacy and assumptions.right_turn_mode == "mixed":
+        if not direct and not assumptions.legacy and not assumptions.approach_conditions and assumptions.right_turn_mode == "mixed":
             factor_line += f" 적색 우회전 차량 비율 {assumptions.red_right_percent:g}% (접근로 공통)."
         self.assumption_text.setText(
             "2025 교차로 설계 지침의 A·B·C·D 판정식과 차로당 1,800대/시를 적용합니다.\n"
@@ -1163,6 +1207,15 @@ class ConfirmPage(QWidget):
             f"우회전 부가용량 {signal.added_right_turn_capacity:g}대/시·접근로, "
             f"이용계수 {signal.utilization_factor:g}."
         )
+
+
+    def _update_method(self) -> None:
+        if not hasattr(self, "standard_shape"):
+            return
+        by_signal = self.use_signal.isChecked() or not self.standard_shape
+        self.guideline_settings.setVisible(not by_signal)
+        self.method_note.setText("검토를 누르면 진출로와 통행 현시를 입력할 수 있습니다." if by_signal else
+                                 "두 대향 도로축이 있어 4지 용량 도표를 적용할 수 있습니다. 별도 회전 현시 등 실제 신호 운영을 반영하려면 아래 항목을 선택하세요.")
 
 
 class ResultPage(QWidget):
@@ -1245,11 +1298,11 @@ class ResultPage(QWidget):
         self.detail_table.setFont(QFont("NanumSquare", 9, QFont.Weight.DemiBold))
         self.detail_table.setFixedHeight(225)
         side.addWidget(self.detail_table)
-        self.copy_button = MotionButton("클립보드에 복사")
+        self.copy_button = MotionButton("그래프 복사")
         self.png_button = MotionButton("PNG 저장")
-        self.detail_button = MotionButton("상세 그래프 저장")
+        self.detail_button = MotionButton("상세 PNG 저장")
         self.all_button = MotionButton("전체 PNG 저장")
-        self.text_button = MotionButton("계산 결과 복사")
+        self.text_button = MotionButton("결과 복사")
         for button in (self.copy_button, self.png_button, self.detail_button, self.all_button, self.text_button):
             button.setMinimumHeight(30)
             side.addWidget(button)
@@ -1272,8 +1325,7 @@ class ResultPage(QWidget):
         self.area.setText(f"판정: 영역 {result.area.value}")
         self.recommendation.setText(f"{message}\n최종 판정 기준 쌍: {result.critical_pair.name} · 전체 {result.total_traffic:,} 대/시")
         self.extension.setText(
-            "※ 3·5·6지 결과는 지침의 4지 교차로 판정식을 충돌 접근로 쌍에 보수적으로 확장하고 최악 결과를 채택합니다."
-            if result.is_extended_method else "지침의 4지 교차로 기준에 따라 4개 충돌 접근로 쌍을 검토했습니다."
+            "접근로 쌍별 참고 결과" if result.is_extended_method else "4지 교차로 용량 도표 · 충돌 접근로 4쌍"
         )
         self.critical_label.setText(f"최종 판정 기준 쌍  {result.critical_pair.name}")
         self.pairs.setRowCount(len(result.pairs))
@@ -1408,6 +1460,10 @@ class AppendixTab(QWidget):
             "<p>평지 · 차로폭 3.0m · 보호좌회전 E=1.08 · 녹색신호 우회전 E=1.20 · EHV=1.8</p>"
             "<p>유효녹색 36초 · 좌회전 2대/주기 · 우회전 부가용량 600대/시·접근로 · 이용계수 0.9</p>"
             "<p>별도 용량분석에서 산정한 계수가 있으면 접근로별 통합 회전계수와 중차량계수를 직접 입력할 수 있습니다.</p>"
+            "<h2>신호계획 검토</h2>"
+            "<p>3지와 복잡한 4~6지는 이동류별 진출로, 보정 포화교통류율과 통행 현시를 입력합니다. "
+            "필요 녹색은 주기 × 시간당 교통량 ÷ 보정 포화교통류율입니다. 같은 차로군은 필요 녹색을 합산합니다.</p>"
+            "<p>입력한 신호계획의 처리 가능 여부를 확인할 수 있습니다. 현장 합류, 보행 상충, 양보 통행의 영향은 현시 구성과 보정 포화교통류율에 반영하세요.</p>"
         )
         self.stack.addWidget(text)
         for page in (244, 245, 246, 247):
@@ -1440,9 +1496,11 @@ class MainWindow(QMainWindow):
         self.project_path: Path | None = None
         self.legacy_path: Path | None = None
         self.last_result: IntersectionResult | None = None
+        self.signal_plan: dict = {}
+        self.signal_result = None
         self.is_dirty = False
         self._suppress_dirty = False
-        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.setWindowTitle(WINDOW_TITLE)
         icon = resource_path("interchange.ico")
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
@@ -1465,7 +1523,11 @@ class MainWindow(QMainWindow):
         self.input = InputPage()
         self.confirm = ConfirmPage()
         self.results = ResultPage()
-        for page in (self.topology, self.input, self.confirm, self.results):
+        self.signal_results = SignalResultPage()
+        self.result_pages = QStackedWidget()
+        self.result_pages.addWidget(self.results)
+        self.result_pages.addWidget(self.signal_results)
+        for page in (self.topology, self.input, self.confirm, self.result_pages):
             self.pages.addWidget(page)
         review_layout.addWidget(self.pages, 1)
         action_bar = QFrame()
@@ -1489,11 +1551,12 @@ class MainWindow(QMainWindow):
         self.input.changed.connect(self._update_nav)
         self.topology.changed.connect(self._mark_dirty)
         self.input.changed.connect(self._mark_dirty)
+        self.confirm.use_signal.toggled.connect(self._mark_dirty)
         self._create_menu()
         self.updater = UpdateController(APP_VERSION, self)
         self.statusBar().showMessage(f"{APP_NAME} v{APP_VERSION}   ·   {APP_AUTHOR}")
         self._page_changed(0)
-        if getattr(sys, "frozen", False) and os.environ.get("KGSS_DISABLE_UPDATE_CHECK") != "1":
+        if not PREVIEW_BUILD and getattr(sys, "frozen", False) and os.environ.get("KGSS_DISABLE_UPDATE_CHECK") != "1":
             QTimer.singleShot(2_500, self.updater.check)
 
     def _create_menu(self) -> None:
@@ -1530,6 +1593,7 @@ class MainWindow(QMainWindow):
         about.triggered.connect(self.show_about)
         update = QAction("업데이트 확인", self)
         update.triggered.connect(lambda: self.updater.check(manual=True))
+        update.setEnabled(not PREVIEW_BUILD)
         help_menu.addActions([guide, update, about])
 
     def set_theme(self, preference: str, *, persist: bool = True) -> None:
@@ -1550,7 +1614,7 @@ class MainWindow(QMainWindow):
     def _page_changed(self, index: int) -> None:
         self.step_label.set_step(index)
         self.back.setVisible(index > 0)
-        self.next.setText("검토 실행" if index == 2 else ("처음으로" if index == 3 else "다음"))
+        self.next.setText("검토" if index == 2 else ("처음으로" if index == 3 else "다음"))
         if self._animations_enabled:
             if self._page_animation is not None:
                 self._page_animation.stop()
@@ -1579,6 +1643,7 @@ class MainWindow(QMainWindow):
             return
         self.is_dirty = True
         self.last_result = None
+        self.signal_result = None
 
     def go_back(self) -> None:
         self.pages.setCurrentIndex(max(0, self.pages.currentIndex() - 1))
@@ -1591,27 +1656,44 @@ class MainWindow(QMainWindow):
                 self.input.set_codes(selected)
             self.pages.setCurrentIndex(1)
         elif index == 1:
-            self.confirm.set_values(
-                self.topology.count,
-                self.input.values(),
-                self.input.assumptions(),
-                self.input.signal_assumptions(),
-            )
+            try:
+                standard = uses_guideline_diagram(self.topology.selected_codes())
+                self.confirm.set_values(
+                    self.topology.count,
+                    self.input.values(validate=False),
+                    self.input.assumptions() if standard else None,
+                    self.input.signal_assumptions() if standard else None,
+                )
+            except ValueError as error:
+                QMessageBox.warning(self, APP_NAME, str(error))
+                return
             self.pages.setCurrentIndex(2)
         elif index == 2:
             try:
-                self.last_result = analyze_intersection(
-                    self.input.values(),
-                    self.input.assumptions(),
-                    self.input.signal_assumptions(),
-                )
-                self.results.set_result(self.last_result)
+                values = self.input.values(validate=False)
+                if self.confirm.use_signal.isChecked() or not uses_guideline_diagram(item.code for item in values):
+                    dialog = SignalPlanDialog(values, self.signal_plan, self)
+                    if dialog.exec() != QDialog.DialogCode.Accepted:
+                        return
+                    self.signal_plan = dialog.data
+                    self._show_signal_result(dialog.review_result)
+                else:
+                    self.last_result = analyze_intersection(self.input.values(), self.input.assumptions(), self.input.signal_assumptions())
+                    self.signal_result = None
+                    self.results.set_result(self.last_result)
+                    self.result_pages.setCurrentWidget(self.results)
                 self.is_dirty = True
                 self.pages.setCurrentIndex(3)
             except ValueError as error:
                 QMessageBox.warning(self, APP_NAME, str(error))
         else:
             self._return_to_start()
+
+    def _show_signal_result(self, result) -> None:
+        self.last_result = None
+        self.signal_result = result
+        self.signal_results.set_result(result)
+        self.result_pages.setCurrentWidget(self.signal_results)
 
     def _return_to_start(self) -> None:
         if not self.is_dirty:
@@ -1650,7 +1732,7 @@ class MainWindow(QMainWindow):
                 ],
             }
         return {
-            "schema": 3,
+            "schema": 4,
             "app_version": APP_VERSION,
             "calculation_basis": {
                 "legacy": "intersection-guideline-2025+khcm-2013",
@@ -1661,8 +1743,11 @@ class MainWindow(QMainWindow):
             "active_codes": self.topology.selected_codes(),
             "same_heavy": self.input.same_heavy.isChecked(),
             "global_heavy": self.input.global_heavy.value(),
-            "approaches": [vars(item) for item in self.input.values()],
+            "approaches": [vars(item) for item in self.input.values(validate=False)],
             "calculation_settings": self.input.settings_data(),
+            "signal_plan": self.signal_plan or None,
+            "use_signal_review": self.confirm.use_signal.isChecked(),
+            "signal_review_complete": self.signal_result is not None,
             "result": result_data,
         }
 
@@ -1697,6 +1782,8 @@ class MainWindow(QMainWindow):
         try:
             self._suppress_dirty = True
             data = json.loads(path.read_text(encoding="utf-8"))
+            if int(data.get("schema", 1)) > 4:
+                raise ValueError("이 프로젝트는 더 새로운 프로그램에서 저장되었습니다. 업데이트 후 열어 주세요.")
             active = list(data["active_codes"])
             self.topology.set_codes(active)
             self.input.set_codes(self.topology.selected_codes())
@@ -1730,18 +1817,26 @@ class MainWindow(QMainWindow):
                     self.input.cards[item["code"]].set_value(item)
             self.legacy_path = path if legacy_file else None
             self.project_path = None if legacy_file else path
-            if data.get("result") and self.input.is_valid():
+            self.last_result = None
+            self.signal_result = None
+            self.signal_plan = data.get("signal_plan") or {}
+            self.confirm.use_signal.setChecked(bool(data.get("use_signal_review", self.signal_plan)))
+            if data.get("signal_review_complete") and self.input.is_valid() and self.signal_plan.get("codes") == self.topology.selected_codes():
+                self._show_signal_result(check_phase_plan(self.input.values(validate=False), self.signal_plan))
+                self.pages.setCurrentIndex(3)
+            elif data.get("result") and self.input.is_valid() and uses_guideline_diagram(active):
                 self.last_result = analyze_intersection(
                     self.input.values(),
                     self.input.assumptions(),
                     self.input.signal_assumptions(),
                 )
                 self.results.set_result(self.last_result)
+                self.result_pages.setCurrentWidget(self.results)
                 self.pages.setCurrentIndex(3)
             else:
                 self.pages.setCurrentIndex(1)
             self.is_dirty = False
-            self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — {path.name}")
+            self.setWindowTitle(f"{WINDOW_TITLE} — {path.name}")
             self.statusBar().showMessage(f"{path.name} 파일을 불러왔습니다.   ·   {APP_AUTHOR}", 5000)
             return True
         except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
@@ -1755,12 +1850,15 @@ class MainWindow(QMainWindow):
         self.project_path = None
         self.legacy_path = None
         self.last_result = None
+        self.signal_plan = {}
+        self.signal_result = None
+        self.confirm.use_signal.setChecked(False)
         self.input.reset_settings()
         self.topology.select_count(4)
         self.input.set_codes(self.topology.selected_codes(), preserve=False)
         self.pages.setCurrentIndex(0)
         self.is_dirty = False
-        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.setWindowTitle(WINDOW_TITLE)
         self._suppress_dirty = False
 
     def show_about(self) -> None:
@@ -1801,7 +1899,7 @@ def main() -> int:
         )
     except AttributeError:
         pass
-    if getattr(sys, "frozen", False):
+    if getattr(sys, "frozen", False) and not PREVIEW_BUILD:
         register_file_association()
     if startup_project is not None:
         QTimer.singleShot(0, lambda: window.load_project(startup_project))

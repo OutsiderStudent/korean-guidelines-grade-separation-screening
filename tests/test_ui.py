@@ -24,7 +24,7 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "5.0.1")
+        self.assertEqual(APP_VERSION, "5.1.0")
 
     def test_packaged_start_checks_and_offers_update_with_two_buttons(self) -> None:
         with patch("sys.frozen", True, create=True), patch.dict(os.environ, {"KGSS_DISABLE_UPDATE_CHECK": "0"}), patch.object(QTimer, "singleShot") as timer:
@@ -32,9 +32,9 @@ class UiRegressionTest(unittest.TestCase):
             timer.assert_any_call(2500, window.updater.check)
 
         next_release = {
-            "tag_name": "v5.0.2",
+            "tag_name": "v5.1.1",
             "body": "2026년 도로용량편람 반영",
-            "assets": [{"name": "K-GSS_v5.0.2_windows-x64.exe"}],
+            "assets": [{"name": "K-GSS_v5.1.1_windows-x64.exe"}],
         }
         from unittest.mock import Mock
         from PySide6.QtNetwork import QNetworkReply
@@ -62,9 +62,9 @@ class UiRegressionTest(unittest.TestCase):
         page = InputPage()
         dialog = CoefficientSettingsDialog(["SB", "WB", "EB"], page.calculation_settings, {})
         dialog.right_mode.setCurrentIndex(dialog.right_mode.findData("mixed"))
-        with patch.object(QMessageBox, "warning") as warning:
-            dialog.accept()
-            warning.assert_called_once()
+        dialog.accept()
+        self.assertEqual(dialog.result(), 0)
+        self.assertIn("적색", dialog.error_label.text())
         dialog.red_right_percent.setValue(30)
         settings, _ = dialog.values()
         page.apply_settings_data(settings)
@@ -167,7 +167,7 @@ class UiRegressionTest(unittest.TestCase):
         window.input.calculation_settings["mode"] = "direct"
         window.input.direct_factors = {"SB": (0.82, 0.86)}
         data = window.project_data()
-        self.assertEqual(data["schema"], 3)
+        self.assertEqual(data["schema"], 4)
         self.assertEqual(data["calculation_basis"], "intersection-guideline-2025+manual")
         self.assertEqual(data["calculation_settings"]["right_addition"], 750.0)
         self.assertEqual(data["calculation_settings"]["direct_factors"]["SB"]["turn"], 0.82)
@@ -213,8 +213,8 @@ class UiRegressionTest(unittest.TestCase):
         auto_height = dialog.height()
         dialog.mode.setCurrentIndex(dialog.mode.findData("direct"))
         self.app.processEvents()
-        self.assertLess(dialog.height(), auto_height)
-        self.assertFalse(dialog.auto_panel.isVisible())
+        self.assertEqual(dialog.height(), auto_height)
+        self.assertTrue(dialog.direct_panel.isVisible())
         spin, _ = dialog.direct_spins["SB"]
         spin.setFocus()
         for delta in (-120, 120):
@@ -225,8 +225,9 @@ class UiRegressionTest(unittest.TestCase):
             )
             QApplication.sendEvent(spin.lineEdit(), wheel)
             self.assertEqual(spin.value(), 0.82)
+        # Without traffic data the automatic reset cannot invent coefficients.
         QTest.mouseClick(dialog.reset_direct, Qt.MouseButton.LeftButton)
-        self.assertEqual(dialog.values()[1], dict.fromkeys(("SB", "WB", "EB"), (0.85, 0.85)))
+        self.assertEqual(dialog.values()[1]["SB"], (0.82, 0.86))
         dialog.close()
 
     def test_progress_distinguishes_current_and_completed_steps(self) -> None:
@@ -235,7 +236,7 @@ class UiRegressionTest(unittest.TestCase):
         self.assertEqual([step.property("state") for step, _, _ in progress.steps], [
             "done", "done", "current", "pending",
         ])
-        self.assertEqual(progress.steps[0][1].text(), "✓")
+        self.assertEqual(progress.steps[0][1].text(), "1")
 
     def test_button_motion_reacts_to_mouse_and_keyboard_without_changing_click(self) -> None:
         button = MotionButton("다음")
