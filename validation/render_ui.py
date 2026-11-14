@@ -27,6 +27,7 @@ def save_widget(widget, name: str) -> None:
 def run() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
+    app.setStyle("Fusion")
     load_application_fonts(resource_path)
     apply_application_theme(app, "light")
     window = MainWindow()

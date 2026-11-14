@@ -1,4 +1,4 @@
-"""입체화검토 v3.6.0 대량 시나리오 독립 검증.
+"""입체화검토 v4.0.0 대량 시나리오 독립 검증.
 
 프로그램 코어와 별도로 지침 경계식을 다시 계산하고, 국내에서 흔히 볼 수
 있는 차로수·교통량·회전율·중차량 조합 및 전체 지원 접근로 조합을 점검한다.
@@ -63,8 +63,9 @@ def manual_capacity(
         fturn = value.direct_turn_factor
         fhv = value.direct_heavy_factor
     elif combined_turn:
-        # 도로용량편람(2013) 식 8-26: 직진+좌+우 통합차로군.
-        fturn = 1.0 / (1.0 + pl * (2.0 - 1.0) + pr * (1.5 - 1.0))
+        # 도로용량편람(2026) 표 8-4: 차로 이동류 보정(기본조건).
+        pt = 1.0 - pl - pr
+        fturn = 1.0 / (pl * 1.08 + pt + pr * 1.20)
     else:
         # 현재 v3.2.0 구현: 좌·우 보정계수를 각각 구해 곱함.
         fturn = (
@@ -463,7 +464,7 @@ def run() -> dict:
     random_legacy_changed = sum(n for (old, new), n in random_legacy_transitions.items() if old != new)
 
     summary = {
-        "version": "3.6.0",
+        "version": "4.0.0",
         "structured_scenario_count": len(scenarios),
         "structured_area_distribution": dict(area_distribution),
         "topology_area_distribution": {key: dict(value) for key, value in topology_distribution.items()},
@@ -475,11 +476,11 @@ def run() -> dict:
         "boundary_case_count": boundary_case_count,
         "boundary_failures": boundary_failures,
         "legacy_v320_changed_structured": legacy_changed,
-        "legacy_to_v340_transition_counts": {f"{a}->{b}": n for (a, b), n in legacy_transitions.items()},
+        "legacy_v320_to_v400_transition_counts": {f"{a}->{b}": n for (a, b), n in legacy_transitions.items()},
         "fixed600_changed_structured": pprime_changed,
         "variable_to_fixed600_transition_counts": {f"{a}->{b}": n for (a, b), n in pprime_transitions.items()},
         "legacy_v320_changed_random_pairs": random_legacy_changed,
-        "random_legacy_to_v340_transition_counts": {f"{a}->{b}": n for (a, b), n in random_legacy_transitions.items()},
+        "random_legacy_v320_to_v400_transition_counts": {f"{a}->{b}": n for (a, b), n in random_legacy_transitions.items()},
         "chart_count": len(selected_images),
         "chart_qa_failures": chart_qa_failures,
         "guideline_example": example,
@@ -488,7 +489,7 @@ def run() -> dict:
     }
     (OUT / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    report = f"""# 입체화검토 v3.6.0 시나리오 검증 보고서
+    report = f"""# 입체화검토 v4.0.0 시나리오 검증 보고서
 
 ## 검증 범위
 
@@ -500,7 +501,6 @@ def run() -> dict:
 
 ## 내부 계산 일관성
 
-- 단위·UI 회귀시험: 30건 통과
 - 현재 프로그램과 독립 동일식 재계산 불일치: {len(current_mismatches)}건
 - 무작위 250,000개 쌍의 영역 불일치: {random_pair_mismatches}건
 - 모든 접근로 조합의 최악 쌍 선정 불일치: {topology_subset_failures}건
@@ -510,11 +510,11 @@ def run() -> dict:
 
 {json.dumps(dict(area_distribution), ensure_ascii=False)}
 
-## 3.2.0 대비 판정 변화
+## 3.2.0 방식 대비 판정 변화
 
-- 통합 회전식과 고정 +600을 적용해 영역이 달라진 구조 시나리오: {legacy_changed:,}/{len(scenarios):,}건
+- 2026 이동류식과 고정 +600을 적용해 영역이 달라진 구조 시나리오: {legacy_changed:,}/{len(scenarios):,}건
 - `300 × 차로수` 대신 접근로당 고정 +600을 적용해 달라진 구조 시나리오: {pprime_changed:,}/{len(scenarios):,}건
-- 종전 3.2.0식과 3.4.0식의 무작위 쌍 판정 차이: {random_legacy_changed:,}/250,000건
+- 종전 방식과 4.0.0식의 무작위 쌍 판정 차이: {random_legacy_changed:,}/250,000건
 
 ## 지침 예제 대조
 
@@ -525,12 +525,12 @@ def run() -> dict:
 
 ## 판정
 
-3.6.0 구현은 통합 회전식, 중차량식, 고정 +600 P′ 가정, 최악 쌍 선택 및 그래프 생성에서 독립 재계산과 일치한다. 지침 예제의 명시 계수를 직접 입력하면 P·P′와 최종 C영역을 재현한다. 자동 모드는 공개된 일반 가정에 의한 개략값이며 지침 예제 고유 계수와 동일하다고 보지 않는다.
+대량 시나리오는 기본 폭·경사 조건의 이동류식과 중차량식, 고정 +600 P′ 가정 및 최악 쌍 선택을 독립 재계산과 대조한다. 지침 예제의 명시 계수를 직접 입력하면 P·P′와 최종 C영역을 재현한다. 자동 모드는 기본 가정에 따른 개략값이다.
 
 ## 검증 한계와 우선 조치
 
 - 이 시험의 교통량은 국내 교차로에서 가능한 범위를 모사한 합성값이며 실측 표본은 아니다.
-- 자동 모드는 EL=2.0, ER=1.5, EHV=1.8을 가정하므로 실제 신호·차로군 조건이 다르면 직접계수를 사용해야 한다.
+- 자동 모드는 평지·차로폭 3.0m·보호좌회전 E=1.08·녹색신호 우회전 E=1.20·EHV=1.8을 가정하므로 실제 조건이 다르면 상세 보정 설정을 사용해야 한다.
 - 3·5·6지의 최악 충돌쌍 방식은 프로그램의 보수적 확장이며 공식 지침 판정으로 표현하지 않는다.
 - 방향별 교통량 입력은 현실적 사용범위에 맞춰 0~99,999대/시로 검증한다.
 - 그래프 {len(selected_images)}장은 839×839 px, 300 dpi 조건을 모두 충족하며 A·B·C·D 색 영역, 경계선, 교통량 점과 축 표기를 확인한다.

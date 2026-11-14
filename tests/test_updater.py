@@ -1,10 +1,15 @@
 import json
 import unittest
 
-from interchange_review.updater import parse_release, version_tuple
+from interchange_review.updater import parse_release, release_highlights, version_tuple
 
 
 class UpdaterTest(unittest.TestCase):
+    def test_release_highlights_stop_before_detail_section(self) -> None:
+        notes = "## 주요 변경 사항\n\n- 개략 보정 개선\n- 기존 파일 호환\n\n## 상세\n전체 설명"
+        self.assertEqual(release_highlights(notes), "• 개략 보정 개선\n• 기존 파일 호환")
+        self.assertEqual(release_highlights("abcdef", limit=3), "abc…")
+
     def test_version_tuple(self) -> None:
         self.assertEqual(version_tuple("v3.6.0"), (3, 6, 0))
         self.assertIsNone(version_tuple("3.6"))

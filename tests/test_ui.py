@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QMessageBox
 
@@ -22,7 +23,23 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "3.9.1")
+        self.assertEqual(APP_VERSION, "5.0.0")
+
+    def test_mixed_right_turn_requires_and_preserves_vehicle_percentage(self) -> None:
+        page = InputPage()
+        dialog = CoefficientSettingsDialog(["SB", "WB", "EB"], page.calculation_settings, {})
+        dialog.right_mode.setCurrentIndex(dialog.right_mode.findData("mixed"))
+        with patch.object(QMessageBox, "warning") as warning:
+            dialog.accept()
+            warning.assert_called_once()
+        dialog.red_right_percent.setValue(30)
+        settings, _ = dialog.values()
+        page.apply_settings_data(settings)
+        self.assertEqual(page.settings_data()["red_right_percent"], 30)
+        self.assertAlmostEqual(page.assumptions().applied_right_equivalent, 1.44)
+        reopened = CoefficientSettingsDialog(["SB", "WB", "EB"], page.settings_data(), {})
+        self.assertEqual(reopened.right_mode.currentData(), "mixed")
+        self.assertEqual(reopened.red_right_percent.value(), 30)
 
     def test_design_system_uses_required_light_tokens_and_font(self) -> None:
         self.assertEqual(FONT_FAMILY, "NanumSquare")
@@ -64,6 +81,22 @@ class UiRegressionTest(unittest.TestCase):
         expected = [code for code in APPROACH_ORDER if code in {"NB", "EB", "SB", "SWB", "WB"}]
         self.assertEqual(list(page.cards), expected)
 
+    def test_legacy_project_keeps_original_method_and_requires_save_as(self) -> None:
+        window = MainWindow()
+        data = window.project_data()
+        data["schema"] = 2
+        data["calculation_settings"].update(left_equivalent=2.25, right_equivalent=1.55)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "이전 프로젝트.igr3"
+            original = json.dumps(data, ensure_ascii=False)
+            path.write_text(original, encoding="utf-8")
+            self.assertTrue(window.load_project(path))
+            self.assertTrue(window.input.assumptions().legacy)
+            self.assertEqual(window.input.assumptions().left_equivalent, 2.25)
+            self.assertIsNone(window.project_path)
+            self.assertEqual(window.legacy_path, path.resolve())
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
     def test_traffic_limit_and_heavy_spinner_buttons(self) -> None:
         page = InputPage()
         page.set_codes(["SB", "WB", "EB"])
@@ -101,7 +134,8 @@ class UiRegressionTest(unittest.TestCase):
         window.input.calculation_settings["mode"] = "direct"
         window.input.direct_factors = {"SB": (0.82, 0.86)}
         data = window.project_data()
-        self.assertEqual(data["schema"], 2)
+        self.assertEqual(data["schema"], 3)
+        self.assertEqual(data["calculation_basis"], "intersection-guideline-2025+manual")
         self.assertEqual(data["calculation_settings"]["right_addition"], 750.0)
         self.assertEqual(data["calculation_settings"]["direct_factors"]["SB"]["turn"], 0.82)
 
@@ -113,7 +147,10 @@ class UiRegressionTest(unittest.TestCase):
             dialog.left_equivalent,
             dialog.right_equivalent,
             dialog.heavy_equivalent,
+            dialog.lane_width,
+            dialog.grade,
             dialog.right_addition,
+            dialog.cycle,
             dialog.effective_green,
             dialog.left_per_cycle,
             dialog.utilization,
@@ -126,6 +163,38 @@ class UiRegressionTest(unittest.TestCase):
         window = MainWindow()
         self.assertGreaterEqual(window.minimumWidth(), 1_050)
         self.assertGreaterEqual(window.minimumHeight(), 750)
+
+    def test_themed_buttonless_numeric_editor_has_room_for_values(self) -> None:
+        apply_application_theme(self.app, "light")
+        dialog = CoefficientSettingsDialog(["SB", "WB", "EB"], {}, {})
+        dialog.show()
+        self.app.processEvents()
+        editor = dialog.cycle.lineEdit()
+        self.assertGreater(editor.width(), editor.fontMetrics().horizontalAdvance(editor.text()))
+        dialog.close()
+
+    def test_direct_settings_switch_reset_and_ignore_wheel(self) -> None:
+        dialog = CoefficientSettingsDialog(["SB", "WB", "EB"], {}, {"SB": (0.82, 0.86)})
+        dialog.show()
+        self.app.processEvents()
+        auto_height = dialog.height()
+        dialog.mode.setCurrentIndex(dialog.mode.findData("direct"))
+        self.app.processEvents()
+        self.assertLess(dialog.height(), auto_height)
+        self.assertFalse(dialog.auto_panel.isVisible())
+        spin, _ = dialog.direct_spins["SB"]
+        spin.setFocus()
+        for delta in (-120, 120):
+            wheel = QWheelEvent(
+                QPointF(10, 10), QPointF(spin.mapToGlobal(QPoint(10, 10))),
+                QPoint(), QPoint(0, delta), Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False,
+            )
+            QApplication.sendEvent(spin.lineEdit(), wheel)
+            self.assertEqual(spin.value(), 0.82)
+        QTest.mouseClick(dialog.reset_direct, Qt.MouseButton.LeftButton)
+        self.assertEqual(dialog.values()[1], dict.fromkeys(("SB", "WB", "EB"), (0.85, 0.85)))
+        dialog.close()
 
     def test_progress_distinguishes_current_and_completed_steps(self) -> None:
         progress = StepProgress()

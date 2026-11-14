@@ -11,6 +11,13 @@ from interchange_review.screening import (
 
 
 class ScreeningModelTest(unittest.TestCase):
+    def test_mixed_right_turn_affects_p_and_preserves_c_and_p_prime(self) -> None:
+        approach = ApproachInput("SB", 2, 0, 800, 200, 0)
+        mixed = calculate_approach(approach, CoefficientAssumptions(right_turn_mode="mixed", red_right_percent=30))
+        green = calculate_approach(approach)
+        self.assertAlmostEqual(mixed.turn_factor, 1 / (0.8 + 0.2 * 1.44))
+        self.assertEqual(mixed.direction.segment_capacity_c, green.direction.segment_capacity_c)
+        self.assertEqual(mixed.direction.with_turn_lane_capacity_p_prime_raw, green.direction.with_turn_lane_capacity_p_prime_raw)
     def test_four_leg_produces_exactly_four_graph_pairs(self) -> None:
         pairs = conflict_pairs(["SB", "NB", "WB", "EB"])
         self.assertEqual(pairs, [("SB", "WB"), ("SB", "EB"), ("WB", "NB"), ("NB", "EB")])
@@ -21,14 +28,23 @@ class ScreeningModelTest(unittest.TestCase):
         self.assertEqual(result.direction.segment_capacity_c, 3_600)
         self.assertEqual(result.direction.one_direction_lanes, 2)
         self.assertAlmostEqual(result.heavy_factor, 1 / 1.16)
-        self.assertAlmostEqual(result.turn_factor, 1 / (1 + 0.1 + 0.1))
+        self.assertAlmostEqual(result.turn_factor, 1 / (0.1 * 1.08 + 0.7 + 0.2 * 1.2))
 
     def test_combined_turn_factor_is_not_product_of_separate_factors(self) -> None:
         result = calculate_approach(ApproachInput("SB", 2, 200, 600, 200, 20))
-        combined = 1 / (1 + 0.2 * (2.0 - 1) + 0.2 * (1.5 - 1))
+        combined = 1 / (0.2 * 1.08 + 0.6 + 0.2 * 1.2)
         separate_product = (1 / 1.2) * (1 / 1.1)
         self.assertAlmostEqual(result.turn_factor, combined)
         self.assertNotAlmostEqual(result.turn_factor, separate_product)
+
+    def test_zero_traffic_approach_retains_defined_capacity(self) -> None:
+        result = calculate_approach(ApproachInput("SB", 2, 0, 0, 0, 0))
+        self.assertEqual(result.direction.no_turn_lane_capacity_p_raw, 3240)
+
+    def test_legacy_project_reproduces_its_custom_coefficients(self) -> None:
+        old = CoefficientAssumptions(left_equivalent=2.2, right_equivalent=1.5, legacy=True)
+        result = calculate_approach(ApproachInput("SB", 2, 200, 600, 200, 0), old)
+        self.assertAlmostEqual(result.turn_factor, 1 / 1.34)
 
     def test_direct_factors_reproduce_guideline_values(self) -> None:
         value = ApproachInput("SB", 2, 220, 1_540, 440, 20, 0.910 * 0.905, 0.850)

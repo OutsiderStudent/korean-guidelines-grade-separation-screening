@@ -8,7 +8,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Qt, Signal
+from PySide6.QtCore import Property, QEasingCurve, QEvent, QPointF, QPropertyAnimation, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QFont, QIcon, QIntValidator,
     QPainter, QPen, QPixmap,
@@ -39,7 +39,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QScrollBar,
     QSizePolicy,
-    QSpinBox,
     QStackedWidget,
     QStyle,
     QStyleOptionButton,
@@ -60,6 +59,7 @@ from .screening import (
     analyze_intersection,
 )
 from .engine import SignalAssumptions
+from .khcm2026 import right_turn_equivalent
 from .file_association import register_file_association, startup_project_path
 from .theme import (
     STYLE as DESIGN_STYLE,
@@ -72,9 +72,10 @@ from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "3.9.1"
+APP_VERSION = "5.0.0"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
+DEFAULT_DIRECT_FACTORS = (0.85, 0.85)
 AREA_STYLE = {
     "A": ("#E8F8F0", "#15935B", "회전차로 부가 없이 신호처리가 가능합니다."),
     "B": ("#EAF2FF", "#2375E8", "회전차로를 부가하면 평면 신호처리가 가능합니다."),
@@ -529,13 +530,13 @@ class ApproachCard(QFrame):
         label.setObjectName("approachCode")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lanes = LaneStepper()
-        self.heavy = QDoubleSpinBox()
+        self.heavy = NumericField()
         self.heavy.setRange(0, 100)
         self.heavy.setDecimals(1)
         self.heavy.setSuffix(" %")
         self.heavy.setValue(20)
         self.heavy.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.heavy.setFixedWidth(70)
+        self.heavy.setFixedWidth(82)
         self.left = TrafficInput()
         self.through = TrafficInput()
         self.right = TrafficInput()
@@ -584,40 +585,124 @@ class ApproachCard(QFrame):
         self.heavy.setValue(float(data.get("heavy_percent", 20)))
 
 
+class SettingsComboBox(QComboBox):
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = palette()["muted" if self.isEnabled() else "disabled_text"]
+        pen = QPen(QColor(color), 1.6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        x = self.width() - 16
+        y = self.height() / 2
+        painter.drawLine(QPointF(x - 3.5, y - 1.5), QPointF(x, y + 2))
+        painter.drawLine(QPointF(x, y + 2), QPointF(x + 3.5, y - 1.5))
+        painter.end()
+
+
+class NumericField(QDoubleSpinBox):
+    """Keep the native editor visible with the buttonless themed frame."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_editor()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fit_editor()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.StyleChange:
+            QTimer.singleShot(0, self, self._fit_editor)
+
+    def _fit_editor(self) -> None:
+        self.lineEdit().setGeometry(self.rect().adjusted(8, 2, -8, -2))
+
+
 class CoefficientSettingsDialog(QDialog):
     """기본 화면을 복잡하게 만들지 않는 선택형 상세 계산 설정."""
 
     def __init__(self, codes: list[str], settings: dict, direct: dict[str, tuple[float, float]], parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("상세 보정 설정")
-        self.resize(590, 530)
+        self.resize(680, 0)
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
         intro = QLabel(
-            "자동 산정은 도로용량편람의 통합 회전식과 중차량식을 적용합니다. "
-            "별도 용량분석 계수가 있으면 접근로별 직접 입력을 선택하세요."
+            "개략 자동 보정은 모든 접근로에 같은 폭·경사·회전 조건을 가정합니다. "
+            "실제 현시나 차로 운영을 반영하려면 별도 분석의 보정계수를 직접 입력하세요."
         )
         intro.setWordWrap(True)
         root.addWidget(intro)
 
-        form = QFormLayout()
-        self.mode = QComboBox()
-        self.mode.addItem("자동 산정 (도로용량편람)", "auto")
+        mode_form = QFormLayout()
+        self.mode = SettingsComboBox()
+        self.mode.addItem("개략 자동 보정", "auto")
         self.mode.addItem("보정계수 직접 입력", "direct")
-        self.mode.setCurrentIndex(1 if settings.get("mode") == "direct" else 0)
-        form.addRow("계산 방식", self.mode)
-        self.left_equivalent = self._factor_spin(1.0, 10.0, settings.get("left_equivalent", 2.0), 2)
-        self.right_equivalent = self._factor_spin(1.0, 10.0, settings.get("right_equivalent", 1.5), 2)
+        if settings.get("mode") == "legacy":
+            self.mode.addItem("기존 프로젝트 자동식", "legacy")
+        self.mode.setCurrentIndex(max(0, self.mode.findData(settings.get("mode", "auto"))))
+        mode_form.addRow("계산 방식", self.mode)
+        root.addLayout(mode_form)
+        self.auto_panel = QWidget()
+        form = QFormLayout(self.auto_panel)
+        form.setContentsMargins(0, 0, 0, 0)
+        self.left_mode = SettingsComboBox()
+        self.left_mode.addItem("보호좌회전", "protected")
+        left_mode = self.left_mode.findData(settings.get("left_turn_mode", "protected"))
+        self.left_mode.setCurrentIndex(max(0, left_mode))
+        self.right_mode = SettingsComboBox()
+        self.right_mode.addItem("녹색신호 우회전", "green")
+        self.right_mode.addItem("적색신호 우회전", "red")
+        self.right_mode.addItem("녹색·적색 모두", "mixed")
+        self.right_mode.addItem("우회전신호 우회전", "right_signal")
+        right_mode = self.right_mode.findData(settings.get("right_turn_mode", "green"))
+        self.right_mode.setCurrentIndex(max(0, right_mode))
+        self.left_equivalent = self._factor_spin(1.0, 10.0, settings.get("left_equivalent", 1.08), 2)
+        self.right_equivalent = self._factor_spin(1.0, 10.0, settings.get("right_equivalent", 1.2), 2)
+        self.legacy_right_equivalent = float(settings.get("right_equivalent", 1.5))
+        red_percent = settings.get("red_right_percent")
+        self.red_right_percent = self._factor_spin(-1, 100, -1 if red_percent is None else red_percent, 1)
+        self.red_right_percent.setSpecialValueText("미입력")
+        self.red_right_percent.setSuffix(" %")
+        self.red_right_percent.setToolTip("전체 우회전 차량 중 적색에 실제로 통과한 차량의 비율")
         self.heavy_equivalent = self._factor_spin(1.0, 10.0, settings.get("heavy_equivalent", 1.8), 2)
-        form.addRow("좌회전 직진환산계수 EL", self.left_equivalent)
-        form.addRow("우회전 직진환산계수 ER", self.right_equivalent)
+        self.lane_width = self._factor_spin(2.0, 6.0, settings.get("lane_width_m", 3.0), 2)
+        self.grade = self._factor_spin(-20.0, 20.0, settings.get("grade_percent", 0.0), 2)
+        form.addRow("좌회전 통행방식", self.left_mode)
+        form.addRow("좌회전 직진환산계수", self.left_equivalent)
+        form.addRow("우회전 통행방식", self.right_mode)
+        form.addRow("적색 우회전 차량 비율", self.red_right_percent)
+        form.addRow("우회전 직진환산계수", self.right_equivalent)
         form.addRow("중차량 승용차환산계수 EHV", self.heavy_equivalent)
-        root.addLayout(form)
+        form.addRow("차로폭 (m)", self.lane_width)
+        form.addRow("접근경사 (%)", self.grade)
+        root.addWidget(self.auto_panel)
 
-        direct_title = QLabel("접근로별 직접 보정계수")
-        direct_title.setObjectName("panelTitle")
-        root.addWidget(direct_title)
+        self.direct_panel = QWidget()
+        direct_layout = QVBoxLayout(self.direct_panel)
+        direct_layout.setContentsMargins(0, 0, 0, 0)
+        direct_layout.setSpacing(8)
+        direct_header = QHBoxLayout()
+        self.direct_title = QLabel("접근로별 직접 보정계수")
+        self.direct_title.setObjectName("panelTitle")
+        direct_header.addWidget(self.direct_title)
+        direct_header.addStretch()
+        self.reset_direct = MotionButton("기본값으로 복귀")
+        self.reset_direct.setObjectName("secondaryButton")
+        self.reset_direct.setAutoDefault(False)
+        self.reset_direct.clicked.connect(self._reset_direct_factors)
+        direct_header.addWidget(self.reset_direct)
+        direct_layout.addLayout(direct_header)
         self.direct_table = QTableWidget(len(codes), 3)
         install_auto_scrollbar(self.direct_table)
         self.direct_table.setHorizontalHeaderLabels(["접근로", "통합 회전계수", "중차량계수"])
@@ -628,7 +713,7 @@ class CoefficientSettingsDialog(QDialog):
             item = QTableWidgetItem(code)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.direct_table.setItem(row, 0, item)
-            turn_value, heavy_value = direct.get(code, (0.85, 0.85))
+            turn_value, heavy_value = direct.get(code, DEFAULT_DIRECT_FACTORS)
             turn = self._factor_spin(0.001, 1.0, turn_value, 4)
             heavy = self._factor_spin(0.001, 1.0, heavy_value, 4)
             self.direct_table.setCellWidget(row, 1, turn)
@@ -636,8 +721,8 @@ class CoefficientSettingsDialog(QDialog):
             self.direct_table.setRowHeight(row, 40)
             self.direct_spins[code] = (turn, heavy)
         self.direct_table.setFixedHeight(min(300, 50 + len(codes) * 40))
-        root.addWidget(self.direct_table)
-        root.addSpacing(8)
+        direct_layout.addWidget(self.direct_table)
+        root.addWidget(self.direct_panel)
 
         pprime = card()
         pprime_box = QVBoxLayout(pprime)
@@ -650,10 +735,12 @@ class CoefficientSettingsDialog(QDialog):
         pform.setContentsMargins(0, 0, 0, 0)
         pform.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.right_addition = self._factor_spin(0.0, 5_000.0, settings.get("right_addition", 600.0), 1)
+        self.cycle = self._factor_spin(10.0, 300.0, settings.get("cycle", 80.0), 1)
         self.effective_green = self._factor_spin(1.0, 79.0, settings.get("effective_green", 36.0), 1)
         self.left_per_cycle = self._factor_spin(0.0, 20.0, settings.get("left_per_cycle", 2.0), 2)
         self.utilization = self._factor_spin(0.01, 1.0, settings.get("utilization", 0.9), 3)
         pform.addRow("우회전 부가용량 (대/시·접근로)", self.right_addition)
+        pform.addRow("신호주기 (초)", self.cycle)
         pform.addRow("유효녹색시간 (초)", self.effective_green)
         pform.addRow("좌회전 통행량 (대/주기)", self.left_per_cycle)
         pform.addRow("유입부 이용계수", self.utilization)
@@ -666,12 +753,27 @@ class CoefficientSettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        root.addStretch()
         self.mode.currentIndexChanged.connect(self._update_mode)
+        self.right_mode.currentIndexChanged.connect(self._movement_mode_changed)
+        self.red_right_percent.valueChanged.connect(self._movement_mode_changed)
+        self._movement_mode_changed()
         self._update_mode()
+
+    def accept(self) -> None:
+        if self.mode.currentData() == "auto" and self.right_mode.currentData() == "mixed":
+            if self.red_right_percent.value() < 0:
+                QMessageBox.warning(self, APP_NAME, "적색에 통과한 우회전 차량 비율을 0~100%로 입력해 주세요.")
+                self.red_right_percent.setFocus()
+                return
+        if self.effective_green.value() >= self.cycle.value():
+            QMessageBox.warning(self, APP_NAME, "유효녹색시간은 신호주기보다 짧아야 합니다.")
+            return
+        super().accept()
 
     @staticmethod
     def _factor_spin(minimum: float, maximum: float, value: float, decimals: int) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
+        spin = NumericField()
         spin.setRange(minimum, maximum)
         spin.setDecimals(decimals)
         spin.setValue(float(value))
@@ -683,17 +785,47 @@ class CoefficientSettingsDialog(QDialog):
 
     def _update_mode(self) -> None:
         direct = self.mode.currentData() == "direct"
-        self.direct_table.setEnabled(direct)
-        for widget in (self.left_equivalent, self.right_equivalent, self.heavy_equivalent):
-            widget.setEnabled(not direct)
+        legacy = self.mode.currentData() == "legacy"
+        self.auto_panel.setVisible(not direct and not legacy)
+        self.direct_panel.setVisible(direct)
+        self.left_equivalent.setReadOnly(True)
+        self.right_equivalent.setReadOnly(True)
+        self.heavy_equivalent.setReadOnly(True)
+        layout = self.layout()
+        layout.activate()
+        height = layout.totalHeightForWidth(self.width())
+        self.resize(self.width(), height if height >= 0 else layout.sizeHint().height())
+
+    def _reset_direct_factors(self) -> None:
+        for turn, heavy in self.direct_spins.values():
+            turn.setValue(DEFAULT_DIRECT_FACTORS[0])
+            heavy.setValue(DEFAULT_DIRECT_FACTORS[1])
+
+    def _movement_mode_changed(self) -> None:
+        mode = self.right_mode.currentData()
+        mixed = mode == "mixed"
+        percent = self.red_right_percent.value()
+        form = self.auto_panel.layout()
+        form.setRowVisible(self.red_right_percent, mixed)
+        form.setRowVisible(self.right_equivalent, not mixed or percent >= 0)
+        if not mixed or percent >= 0:
+            self.right_equivalent.setValue(right_turn_equivalent(mode, percent / 100))
+        self._update_mode()
 
     def values(self) -> tuple[dict, dict[str, tuple[float, float]]]:
+        legacy = self.mode.currentData() == "legacy"
         settings = {
             "mode": self.mode.currentData(),
-            "left_equivalent": self.left_equivalent.value(),
-            "right_equivalent": self.right_equivalent.value(),
-            "heavy_equivalent": self.heavy_equivalent.value(),
+            "left_equivalent": self.left_equivalent.value() if legacy else 1.08,
+            "right_equivalent": self.legacy_right_equivalent if legacy else self.right_equivalent.value(),
+            "heavy_equivalent": self.heavy_equivalent.value() if legacy else 1.8,
+            "left_turn_mode": self.left_mode.currentData(),
+            "right_turn_mode": self.right_mode.currentData(),
+            "red_right_percent": self.red_right_percent.value() if self.red_right_percent.value() >= 0 else None,
+            "lane_width_m": self.lane_width.value(),
+            "grade_percent": self.grade.value(),
             "right_addition": self.right_addition.value(),
+            "cycle": self.cycle.value(),
             "effective_green": self.effective_green.value(),
             "left_per_cycle": self.left_per_cycle.value(),
             "utilization": self.utilization.value(),
@@ -720,10 +852,16 @@ class InputPage(QWidget):
         title_row.addStretch()
         self.calculation_settings = {
             "mode": "auto",
-            "left_equivalent": 2.0,
-            "right_equivalent": 1.5,
+            "left_equivalent": 1.08,
+            "right_equivalent": 1.2,
             "heavy_equivalent": 1.8,
+            "left_turn_mode": "protected",
+            "right_turn_mode": "green",
+            "red_right_percent": None,
+            "lane_width_m": 3.0,
+            "grade_percent": 0.0,
             "right_addition": 600.0,
+            "cycle": 80.0,
             "effective_green": 36.0,
             "left_per_cycle": 2.0,
             "utilization": 0.9,
@@ -734,13 +872,13 @@ class InputPage(QWidget):
         title_row.addWidget(self.advanced_button)
         self.same_heavy = QCheckBox("모든 접근로에 같은 중차량 비율 적용")
         self.same_heavy.setChecked(True)
-        self.global_heavy = QDoubleSpinBox()
+        self.global_heavy = NumericField()
         self.global_heavy.setRange(0, 100)
         self.global_heavy.setDecimals(1)
         self.global_heavy.setValue(20)
         self.global_heavy.setSuffix(" %")
         self.global_heavy.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.global_heavy.setFixedWidth(78)
+        self.global_heavy.setFixedWidth(90)
         title_row.addWidget(self.same_heavy)
         title_row.addWidget(self.global_heavy)
         root.addLayout(title_row)
@@ -868,7 +1006,7 @@ class InputPage(QWidget):
                 continue
             value = self.cards[code].value()
             if direct_mode:
-                turn, heavy = self.direct_factors.get(code, (0.85, 0.85))
+                turn, heavy = self.direct_factors.get(code, DEFAULT_DIRECT_FACTORS)
                 value = replace(value, direct_turn_factor=turn, direct_heavy_factor=heavy)
             values.append(value)
         return values
@@ -878,11 +1016,17 @@ class InputPage(QWidget):
             left_equivalent=float(self.calculation_settings["left_equivalent"]),
             right_equivalent=float(self.calculation_settings["right_equivalent"]),
             heavy_equivalent=float(self.calculation_settings["heavy_equivalent"]),
+            lane_width_m=float(self.calculation_settings["lane_width_m"]),
+            grade_percent=float(self.calculation_settings["grade_percent"]),
+            left_turn_mode=str(self.calculation_settings["left_turn_mode"]),
+            right_turn_mode=str(self.calculation_settings["right_turn_mode"]),
+            red_right_percent=self.calculation_settings["red_right_percent"],
+            legacy=self.calculation_settings["mode"] == "legacy",
         )
 
     def signal_assumptions(self) -> SignalAssumptions:
         return SignalAssumptions(
-            cycle_seconds=80.0,
+            cycle_seconds=float(self.calculation_settings["cycle"]),
             effective_green_seconds=float(self.calculation_settings["effective_green"]),
             left_turn_vehicles_per_cycle=float(self.calculation_settings["left_per_cycle"]),
             added_right_turn_capacity=float(self.calculation_settings["right_addition"]),
@@ -915,10 +1059,16 @@ class InputPage(QWidget):
     def reset_settings(self) -> None:
         self.calculation_settings.update(
             mode="auto",
-            left_equivalent=2.0,
-            right_equivalent=1.5,
+            left_equivalent=1.08,
+            right_equivalent=1.2,
             heavy_equivalent=1.8,
+            left_turn_mode="protected",
+            right_turn_mode="green",
+            red_right_percent=None,
+            lane_width_m=3.0,
+            grade_percent=0.0,
             right_addition=600.0,
+            cycle=80.0,
             effective_green=36.0,
             left_per_cycle=2.0,
             utilization=0.9,
@@ -1001,14 +1151,19 @@ class ConfirmPage(QWidget):
         factor_line = (
             "보정계수: 접근로별 직접 입력값을 적용합니다."
             if direct
-            else "자동 보정계수: 도로용량편람 통합 회전식·중차량식, "
-            f"EL={assumptions.left_equivalent:.2f}, ER={assumptions.right_equivalent:.2f}, "
-            f"EHV={assumptions.heavy_equivalent:.2f}."
+            else "보정계수: 저장 파일의 기존 자동식을 재현합니다."
+            if assumptions.legacy
+            else "자동 보정계수: 차로폭·경사·이동류·중차량식, "
+            f"좌회전 E={assumptions.left_equivalent:.2f}, 우회전 E={assumptions.applied_right_equivalent:.2f}, "
+            f"EHV={assumptions.heavy_equivalent:.2f}, 폭 {assumptions.lane_width_m:.2f}m, "
+            f"경사 {assumptions.grade_percent:.2f}%."
         )
+        if not direct and not assumptions.legacy and assumptions.right_turn_mode == "mixed":
+            factor_line += f" 적색 우회전 차량 비율 {assumptions.red_right_percent:g}% (접근로 공통)."
         self.assumption_text.setText(
             "2025 교차로 설계 지침의 A·B·C·D 판정식과 차로당 1,800대/시를 적용합니다.\n"
             f"{factor_line}\n"
-            f"회전차로 설치 시: 유효녹색 {signal.effective_green_seconds:g}초, "
+            f"회전차로 설치 시: 주기 {signal.cycle_seconds:g}초, 유효녹색 {signal.effective_green_seconds:g}초, "
             f"좌회전 {signal.left_turn_vehicles_per_cycle:g}대/주기, "
             f"우회전 부가용량 {signal.added_right_turn_capacity:g}대/시·접근로, "
             f"이용계수 {signal.utilization_factor:g}."
@@ -1166,7 +1321,7 @@ class ResultPage(QWidget):
             rows = [
                 ("교통량 q", f"{a.direction.hourly_design_traffic_q:,.0f}", f"{b.direction.hourly_design_traffic_q:,.0f}"),
                 ("좌/우(%)", f"{a.input.left_ratio * 100:.1f}/{a.input.right_ratio * 100:.1f}", f"{b.input.left_ratio * 100:.1f}/{b.input.right_ratio * 100:.1f}"),
-                ("통합 회전계수", f"{a.turn_factor:.4f}", f"{b.turn_factor:.4f}"),
+                ("도로·이동류계수", f"{a.turn_factor:.4f}", f"{b.turn_factor:.4f}"),
                 ("중차량계수", f"{a.heavy_factor:.4f}", f"{b.heavy_factor:.4f}"),
                 ("P", f"{a.direction.no_turn_lane_capacity_p_raw:,.1f}", f"{b.direction.no_turn_lane_capacity_p_raw:,.1f}"),
                 ("P′", f"{a.direction.with_turn_lane_capacity_p_prime_raw:,.1f}", f"{b.direction.with_turn_lane_capacity_p_prime_raw:,.1f}"),
@@ -1233,7 +1388,7 @@ class AppendixTab(QWidget):
         install_auto_scrollbar(nav)
         nav.addItems([
             "적용 근거", "지침 원문 235", "지침 원문 236", "지침 원문 237", "지침 원문 238",
-            "편람 식 8-26", "편람 식 8-39",
+            "편람 보정계수", "편람 이동류계수",
         ])
         root.addWidget(nav, 1)
         self.stack = QStackedWidget()
@@ -1248,13 +1403,15 @@ class AppendixTab(QWidget):
             "<p>판정에는 표시용 백 단위 반올림값이 아니라 계산 원시값을 사용합니다.</p>"
             "<h2>프로그램 계산 설명</h2>"
             "<p>C = 1,800 × 편도 본선 차로수</p>"
-            "<p>P = C × 통합 회전 보정계수 × 중차량 보정계수 × 이용계수</p>"
-            "<p>통합 회전 보정계수 f = 1 / [1 + PL(EL − 1) + PR(ER − 1)] — 도로용량편람(2013), 통합차로군 식</p>"
-            "<p>중차량 보정계수 fHV = 1 / [1 + PHV(EHV − 1)] — 도로용량편람(2013), 식 8-39</p>"
+            "<p>P = C × 경사·차로폭·이동류 보정계수 × 중차량 보정계수 × 이용계수</p>"
+            "<p>이동류 보정계수 fM = 1 / Σ(pM × EM) — 도로용량편람(2026), 표 8-4</p>"
+            "<p>중차량 보정계수 fHV = 1 / [(1 − PHV) + PHV × EHV], EHV=1.8 — 도로용량편람(2026), 표 8-4</p>"
+            "<p>경사 보정계수 fg = min[1, 1 − 0.012gr], 차로폭 보정계수 fw = min[1, 1 − 0.35(3 − w)]</p>"
             "<p>P′ 기본값 = (C + 600) × 0.9 + 2 × 3,600 / 36이며 상세 보정 설정에서 변경할 수 있습니다.</p>"
-            "<p><b>주의:</b> 2025 지침의 A~D 판정과 2013 편람의 자동 계수 산정은 출처가 서로 다릅니다. 상세 차로군 분석을 대신하지 않습니다.</p>"
+            "<p>개략 자동 보정은 접근로 교통량 전체를 대표 이동류로 묶고 동일 차로폭·경사를 가정합니다. 차로별 교통량 배분과 현시가 필요한 정밀 운영분석에는 별도 분석이 필요합니다.</p>"
             "<h2>기본 적용값</h2>"
-            "<p>EL=2.0, ER=1.5, EHV=1.8 · 유효녹색 36초 · 좌회전 2대/주기 · 우회전 부가용량 600대/시·접근로 · 이용계수 0.9</p>"
+            "<p>평지 · 차로폭 3.0m · 보호좌회전 E=1.08 · 녹색신호 우회전 E=1.20 · EHV=1.8</p>"
+            "<p>유효녹색 36초 · 좌회전 2대/주기 · 우회전 부가용량 600대/시·접근로 · 이용계수 0.9</p>"
             "<p>별도 용량분석에서 산정한 계수가 있으면 접근로별 통합 회전계수와 중차량계수를 직접 입력할 수 있습니다.</p>"
         )
         self.stack.addWidget(text)
@@ -1271,19 +1428,13 @@ class AppendixTab(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
             viewer.setWidget(label)
             self.stack.addWidget(viewer)
-        for filename, printed_page in (("khcm-page-241.png", 241), ("khcm-page-249.png", 249)):
-            viewer = QScrollArea()
-            install_auto_scrollbar(viewer)
-            viewer.setWidgetResizable(True)
-            label = QLabel()
-            image_path = resource_path(filename)
-            if image_path.exists():
-                label.setPixmap(QPixmap(str(image_path)))
-            else:
-                label.setText(f"도로용량편람 원문 이미지 파일을 찾을 수 없습니다: {printed_page}쪽")
-            label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-            viewer.setWidget(label)
-            self.stack.addWidget(viewer)
+        for heading, body in (
+            ("포화교통류율 보정계수", "sᵢ = s₀ × fg × fw,i × fHV,i × fM,i<br>기본포화교통류율 s₀ = 2,200승용차/시/차로<br>근거: 도로용량편람(2026) 제8장 표 8-4"),
+            ("이동류 직진환산계수", "직진 1.0 · 보호좌회전 1.00~1.11 · 녹색/우회전신호 우회전 1.2 · 적색신호 우회전 2.0<br>비보호좌회전은 대향 직진교통류를 반영하며 대향교통량이 없을 때 1.53<br>근거: 도로용량편람(2026) 제8장 표 8-13~8-14"),
+        ):
+            browser = QTextBrowser()
+            browser.setHtml(f"<h1>{heading}</h1><p>{body}</p>")
+            self.stack.addWidget(browser)
         nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         nav.setCurrentRow(0)
 
@@ -1292,6 +1443,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.project_path: Path | None = None
+        self.legacy_path: Path | None = None
         self.last_result: IntersectionResult | None = None
         self.is_dirty = False
         self._suppress_dirty = False
@@ -1326,7 +1478,7 @@ class MainWindow(QMainWindow):
         nav = QHBoxLayout(action_bar)
         nav.setContentsMargins(24, 8, 24, 12)
         self.back = MotionButton("이전")
-        self.back.setObjectName("tertiary")
+        self.back.setObjectName("backButton")
         self.next = MotionButton("다음")
         self.next.setObjectName("primary")
         nav.addWidget(self.back)
@@ -1503,8 +1655,13 @@ class MainWindow(QMainWindow):
                 ],
             }
         return {
-            "schema": 2,
+            "schema": 3,
             "app_version": APP_VERSION,
+            "calculation_basis": {
+                "legacy": "intersection-guideline-2025+khcm-2013",
+                "direct": "intersection-guideline-2025+manual",
+                "auto": "intersection-guideline-2025+khcm-2026",
+            }[self.input.calculation_settings["mode"]],
             "intersection_count": self.topology.count,
             "active_codes": self.topology.selected_codes(),
             "same_heavy": self.input.same_heavy.isChecked(),
@@ -1527,6 +1684,9 @@ class MainWindow(QMainWindow):
         if path:
             if not path.lower().endswith(".igr3"):
                 path += ".igr3"
+            if self.legacy_path == Path(path).resolve():
+                QMessageBox.warning(self, APP_NAME, "기존 프로젝트를 보존하려면 다른 이름으로 저장해 주세요.")
+                return False
             self.project_path = Path(path)
             return self.save_project()
         return False
@@ -1558,13 +1718,23 @@ class MainWindow(QMainWindow):
                     "right_addition": 600.0,
                     "mode": "auto",
                 }
+            legacy_file = int(data.get("schema", 1)) < 3
+            if legacy_file and (settings or {}).get("mode", "auto") == "auto":
+                settings = {
+                    "left_equivalent": 2.0,
+                    "right_equivalent": 1.5,
+                    **(settings or {}),
+                    "mode": "legacy",
+                }
+            self.input.reset_settings()
             self.input.apply_settings_data(settings)
             self.input.same_heavy.setChecked(bool(data.get("same_heavy", True)))
             self.input.global_heavy.setValue(float(data.get("global_heavy", 20)))
             for item in data.get("approaches", []):
                 if item["code"] in self.input.cards:
                     self.input.cards[item["code"]].set_value(item)
-            self.project_path = path
+            self.legacy_path = path if legacy_file else None
+            self.project_path = None if legacy_file else path
             if data.get("result") and self.input.is_valid():
                 self.last_result = analyze_intersection(
                     self.input.values(),
@@ -1588,6 +1758,7 @@ class MainWindow(QMainWindow):
     def new_project(self) -> None:
         self._suppress_dirty = True
         self.project_path = None
+        self.legacy_path = None
         self.last_result = None
         self.input.reset_settings()
         self.topology.select_count(4)
@@ -1603,7 +1774,7 @@ class MainWindow(QMainWindow):
             "프로그램 정보",
             f"<h2>{APP_NAME}</h2><p>v{APP_VERSION}</p><p>{APP_AUTHOR}</p>"
             "<p><b>이메일</b>: dmecyh@naver.com</p>"
-            "<p>국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작하였습니다.</p>"
+            "<p>국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2026)」을 참고하여 제작하였습니다.</p>"
             "<p>본 결과는 기본계획 단계의 개략검토이며 상세 교통분석을 대신하지 않습니다.</p>",
         )
 

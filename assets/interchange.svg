@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192">
+<defs>
+<path id="r" d="M96 27 C96 49 116 68 138 62 C157 57 159 33 143 25 C125 16 113 34 116 51 C119 78 147 94 169 94"/>
+<linearGradient id="mint" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#33c5a1"/><stop offset="1" stop-color="#209e83"/></linearGradient>
+<linearGradient id="blue" x1="0" y1="0" x2="1" y2=".15"><stop stop-color="#559df7"/><stop offset="1" stop-color="#3174df"/></linearGradient>
+</defs>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<g stroke-width="14" stroke="#153853" opacity=".12" transform="translate(0 2)">
+<use xlink:href="#r"/><use xlink:href="#r" transform="rotate(90 96 96)"/><use xlink:href="#r" transform="rotate(180 96 96)"/><use xlink:href="#r" transform="rotate(270 96 96)"/>
+</g>
+<g stroke-width="10">
+<use xlink:href="#r" stroke="#28ae91"/>
+<use xlink:href="#r" transform="rotate(90 96 96)" stroke="#4085eb"/>
+<use xlink:href="#r" transform="rotate(180 96 96)" stroke="#28ae91"/>
+<use xlink:href="#r" transform="rotate(270 96 96)" stroke="#4085eb"/>
+</g>
+<path d="M20 97H172" stroke="#19826d" stroke-width="34"/>
+<path d="M20 95H172" stroke="url(#mint)" stroke-width="34"/>
+<path d="M23 95H74 M118 95H169" stroke="#E1FFF7" stroke-width="4" stroke-dasharray="9 9"/>
+<path d="M98 85V107" stroke="#122642" stroke-width="42" opacity=".18"/>
+<rect x="79" y="13" width="34" height="167" rx="17" fill="#2964bf"/>
+<rect x="79" y="11" width="34" height="167" rx="17" fill="url(#blue)"/>
+<path d="M96 21V171" stroke="#F4F8FF" stroke-width="5" stroke-dasharray="9 9"/>
+</g></svg>

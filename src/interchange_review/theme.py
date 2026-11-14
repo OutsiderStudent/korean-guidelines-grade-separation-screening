@@ -147,11 +147,22 @@ QPushButton:checked, QPushButton#primary { background: @PRIMARY@; color: #FFFFFF
 QPushButton#primary:hover { background: @PRIMARY_HOVER@; color: #FFFFFF; }
 QPushButton#primary:pressed { background: @PRIMARY_PRESSED@; border-color: @ACCENT@; }
 QPushButton#secondaryButton { background: @ACCENT_SOFT@; color: @PRIMARY@; }
-QPushButton#tertiary { background: transparent; color: @MUTED@; }
+QPushButton#backButton { background: @SURFACE_ALT@; color: @TEXT@; border-color: @DIVIDER@; }
+QPushButton#backButton:hover { background: @HOVER@; color: @PRIMARY@; }
+QPushButton#backButton:pressed { background: @ACCENT_SOFT@; border-color: @ACCENT@; }
+QPushButton#backButton:focus { border-color: @FOCUS@; }
 QPushButton:focus { border: 1px solid @FOCUS@; }
 QPushButton:disabled { background: @DISABLED@; color: @DISABLED_TEXT@; }
 QPushButton#stepButton { padding: 0; min-width: 28px; max-width: 28px; font-size: 14pt; font-weight: 800; border-radius: 9px; }
-QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit { background: @INPUT@; color: @TEXT@; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; selection-background-color: @ACCENT@; }
+QSpinBox, QDoubleSpinBox { background: @INPUT@; color: @TEXT@; border: 1px solid transparent; border-radius: 8px; padding: 2px 8px; selection-background-color: @ACCENT@; }
+QLineEdit { background: @INPUT@; color: @TEXT@; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; selection-background-color: @ACCENT@; }
+QComboBox { background: @INPUT@; color: @TEXT@; border: 1px solid @DIVIDER@; border-radius: 9px; padding: 5px 34px 5px 10px; min-height: 20px; }
+QComboBox::drop-down { subcontrol-origin: border; subcontrol-position: top right; width: 32px; border: 0; background: transparent; }
+QComboBox::down-arrow { width: 0; height: 0; }
+QComboBox:on { background: @HOVER@; border-color: @FOCUS@; }
+QComboBox QAbstractItemView { background: @SURFACE@; color: @TEXT@; border: 1px solid @DIVIDER@; border-radius: 9px; padding: 4px; outline: 0; selection-background-color: @ACCENT_SOFT@; selection-color: @TEXT@; }
+QComboBox QAbstractItemView::item { padding: 6px 9px; min-height: 20px; border-radius: 5px; }
+QDoubleSpinBox QLineEdit, QSpinBox QLineEdit { background: transparent; border: 0; padding: 0; }
 QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover, QLineEdit:hover { background: @HOVER@; }
 QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QLineEdit:focus { border: 1px solid @FOCUS@; background: @SURFACE@; }
 QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled, QLineEdit:disabled { background: @DISABLED@; color: @DISABLED_TEXT@; }

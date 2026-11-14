@@ -1,11 +1,11 @@
 # Korean Guidelines-Based Grade Separation Screening
 
 **Traffic Volume and Capacity Assessment**  
-한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v3.9.1**
+한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v5.0.0**
 
 made by NYH · dmecyh@naver.com
 
-국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2013)」을 참고하여 제작한 입체교차 개략검토 프로그램입니다.
+국토교통부 「교차로 설계지침(2025)」과 「도로용량편람(2026)」을 참고하여 제작한 입체교차 개략검토 프로그램입니다.
 
 > K-GSS is a Korean-guidelines-based desktop tool for screening intersection grade-separation needs using traffic volume and capacity.
 
@@ -30,8 +30,10 @@ made by NYH · dmecyh@naver.com
 ## 계산 원칙과 출처 구분
 
 - A·B·C·D 경계, `C = 1,800 × 편도 본선 차로수`, P·P′ 구조 및 예시는 「교차로 설계 지침(2025.06)」 PDF 244~247쪽(인쇄면 235~238쪽)을 따릅니다.
-- 자동 회전계수는 「도로용량편람(2013)」의 직진·좌·우 통합차로군 식 `f = 1/[1+PL(EL-1)+PR(ER-1)]`, 중차량계수는 식 8-39를 적용합니다.
-- 상세 차로군·신호조건을 입력하지 않는 개략검토 기본값은 `EL=2.0`, `ER=1.5`, `EHV=1.8`이며 프로그램의 입력 확인 화면과 부록에 공개합니다.
+- 자동 보정은 이동류식 `fM = 1/Σ(pM×EM)`과 경사·차로폭·중차량 보정식을 적용합니다.
+- 기본값은 평지, 차로폭 3.0m, 보호좌회전 `E=1.08`, 녹색신호 우회전 `E=1.20`, 중차량 `EHV=1.8`이며 입력 확인 화면과 부록에 공개합니다.
+- 자동 보정은 동일 조건을 가정한 접근로 단위 근사입니다. 차로·현시별 용량, 대기행렬, 지체와 서비스수준은 별도 분석 범위입니다.
+- 이전 프로젝트는 원래 자동식이나 직접 입력 계수를 유지합니다. 상세 보정 설정에서 개략 자동 보정으로 전환할 수 있으며, 저장할 때는 다른 파일 이름을 사용합니다.
 - 별도 분석계수가 있으면 접근로별 통합 회전계수와 중차량계수를 직접 입력할 수 있습니다. 2025 지침 예제의 명시 계수는 직접 입력 회귀시험으로 q, C, P, P′ 및 영역 C를 재현합니다.
 - P′ 기본값은 지침 예제의 `(C + 600) × 0.9 + 2 × 3,600 / 36`이며 상세 설정에서 근거값을 변경할 수 있습니다.
 - 판정에는 백 단위 표시값이 아닌 원시 계산값을 사용합니다.
@@ -56,8 +58,10 @@ python validation\render_ui.py
 .\build.ps1
 ```
 
-로컬 x64 빌드 결과: `dist\K-GSS_v3.9.1.exe`
+로컬 x64 빌드 결과: `dist\K-GSS_v5.0.0.exe`
 
-GitHub Release에는 `K-GSS_v3.9.1_windows-x64.exe`와 `K-GSS_v3.9.1_windows-arm64.exe`를 함께 제공합니다.
+GitHub Release에는 `K-GSS_v5.0.0_windows-x64.exe`와 `K-GSS_v5.0.0_windows-arm64.exe`를 함께 제공합니다.
+
+기존 2013 편람 기반 최종 상태는 Git 태그 `legacy-khcm2013-v3.9.1`에 보존합니다.
 
 NanumSquare는 네이버 공식 배포본을 포함하며 저작권 안내는 `assets/NanumSquare-LICENSE.txt`에 있습니다.

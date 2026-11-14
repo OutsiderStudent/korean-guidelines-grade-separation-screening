@@ -1,8 +1,8 @@
 """사용자 입력 중심의 입체교차 개략검토 모델.
 
 판정 경계는 「교차로 설계 지침(2025.06)」의 A·B·C·D 식을 사용한다.
-회전·중차량 자동 보정은 사용자가 제공한 「도로용량편람(2013)」 식 8-26,
-8-39를 사용하며, 두 문헌의 역할을 결과와 부록에서 명확히 구분한다.
+회전·중차량 자동 보정은 「도로용량편람(2026)」 제8장의 차로·이동류
+보정식을 사용하며, 두 문헌의 역할을 결과와 부록에서 명확히 구분한다.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from .engine import (
     round_to_hundred,
 )
 from .khcm2013 import combined_turn_adjustment_factor, heavy_vehicle_adjustment_factor
+from .khcm2026 import automatic_factors, right_turn_equivalent
 
 
 # 진행방향 표기를 평면도의 북측 접근로부터 시계방향으로 정렬한다.
@@ -37,13 +38,26 @@ AREA_RANK = {Area.A: 0, Area.B: 1, Area.C: 2, Area.D: 3}
 class CoefficientAssumptions:
     """자동 계수 산정에 쓰는 공개 가정.
 
-    회전 직진환산계수는 상세 차로군·신호조건을 입력하지 않는 개략검토를 위한
-    기본값이다. 결과 화면에 항상 표시해 상세 교통분석과 혼동하지 않게 한다.
+    상세 신호현시를 입력하지 않는 입체화 개략검토의 자동 보정조건이다.
+    기본값은 평지, 폭 3.0m, 보호좌회전, 녹색신호우회전 조건이다.
     """
 
-    left_equivalent: float = 2.0
-    right_equivalent: float = 1.5
+    left_equivalent: float = 1.08
+    right_equivalent: float = 1.2
     heavy_equivalent: float = 1.8
+    lane_width_m: float = 3.0
+    grade_percent: float = 0.0
+    left_turn_mode: str = "protected"
+    right_turn_mode: str = "green"
+    legacy: bool = False
+    red_right_percent: float | None = None
+
+    @property
+    def applied_right_equivalent(self) -> float:
+        if self.legacy or self.right_turn_mode != "mixed":
+            return self.right_equivalent
+        ratio = None if self.red_right_percent is None else self.red_right_percent / 100
+        return right_turn_equivalent("mixed", ratio)
 
 
 @dataclass(frozen=True)
@@ -87,6 +101,10 @@ class ApproachInput:
     def right_ratio(self) -> float:
         return self.right / self.total if self.total else 0.0
 
+    @property
+    def through_ratio(self) -> float:
+        return self.through / self.total if self.total else 0.0
+
 
 @dataclass(frozen=True)
 class ApproachResult:
@@ -95,6 +113,9 @@ class ApproachResult:
     heavy_factor: float
     factor_mode: str
     direction: DirectionResult
+    movement_factor: float = 1.0
+    grade_factor: float = 1.0
+    lane_width_factor: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -129,17 +150,35 @@ def calculate_approach(
         turn_factor = data.direct_turn_factor
         heavy_factor = data.direct_heavy_factor
         factor_mode = "직접 입력"
+        movement_factor = turn_factor
+        grade_factor = 1.0
+        lane_width_factor = 1.0
+    elif assumptions.legacy:
+        turn_factor = movement_factor = combined_turn_adjustment_factor(
+            data.left_ratio, assumptions.left_equivalent,
+            data.right_ratio, assumptions.right_equivalent,
+        )
+        heavy_factor = heavy_vehicle_adjustment_factor(data.heavy_percent / 100, assumptions.heavy_equivalent)
+        grade_factor = lane_width_factor = 1.0
+        factor_mode = "기존 자동식"
     else:
-        turn_factor = combined_turn_adjustment_factor(
-            data.left_ratio,
-            assumptions.left_equivalent,
-            data.right_ratio,
-            assumptions.right_equivalent,
+        factors = automatic_factors(
+            left_proportion=data.left_ratio,
+            through_proportion=data.through_ratio if data.total else 1.0,
+            right_proportion=data.right_ratio,
+            heavy_proportion=data.heavy_percent / 100.0,
+            lane_width_m=assumptions.lane_width_m,
+            grade_percent=assumptions.grade_percent,
+            left_equivalent_value=assumptions.left_equivalent,
+            right_equivalent_value=assumptions.applied_right_equivalent,
+            heavy_equivalent=assumptions.heavy_equivalent,
         )
-        heavy_factor = heavy_vehicle_adjustment_factor(
-            data.heavy_percent / 100.0, assumptions.heavy_equivalent
-        )
-        factor_mode = "자동 산정"
+        movement_factor = factors.movement
+        grade_factor = factors.grade
+        lane_width_factor = factors.lane_width
+        turn_factor = factors.roadway_and_movement
+        heavy_factor = factors.heavy_vehicle
+        factor_mode = "개략 보정"
     capacity_c = 1_800.0 * data.lanes
     p_raw = capacity_c * turn_factor * heavy_factor * signal.utilization_factor
     p_prime_raw = (
@@ -162,6 +201,9 @@ def calculate_approach(
         heavy_factor=heavy_factor,
         factor_mode=factor_mode,
         direction=direction,
+        movement_factor=movement_factor,
+        grade_factor=grade_factor,
+        lane_width_factor=lane_width_factor,
     )
 
 

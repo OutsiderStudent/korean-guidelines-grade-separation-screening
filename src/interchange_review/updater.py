@@ -13,7 +13,7 @@ import ctypes
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QStandardPaths, QUrl
+from PySide6.QtCore import QObject, QProcess, QStandardPaths, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog, QWidget
@@ -44,6 +44,25 @@ class ReleaseInfo:
     size: int
     architecture: str
     asset_name: str
+
+
+def release_highlights(notes: str, limit: int = 900) -> str:
+    """Release notes start with the user-facing summary."""
+    lines = notes.strip().splitlines()
+    if lines and lines[0].lstrip("# ").rstrip() == "주요 변경 사항":
+        lines.pop(0)
+    summary = []
+    for line in lines:
+        line = line.strip()
+        if line.startswith("#"):
+            break
+        if line.startswith(("- ", "* ")):
+            line = "• " + line[2:]
+        summary.append(line)
+    value = "\n".join(summary).strip() or notes.strip()
+    if len(value) > limit:
+        value = value[:limit].rstrip() + "…"
+    return value or "변경 사항이 제공되지 않았습니다."
 
 
 def _normalize_architecture(value: str) -> str:
@@ -185,14 +204,12 @@ class UpdateController(QObject):
         box = QMessageBox(self.parent_widget)
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle("업데이트")
+        box.setTextFormat(Qt.TextFormat.PlainText)
         if architecture_migration:
             box.setText("이 장치에 맞는 K-GSS ARM64 최적화 버전이 있습니다.")
         else:
             box.setText(f"K-GSS v{release.version} 업데이트가 있습니다.")
-        notes = release.notes.strip()
-        if len(notes) > 900:
-            notes = notes[:900].rstrip() + "…"
-        box.setInformativeText(notes)
+        box.setInformativeText("주요 변경 사항\n\n" + release_highlights(release.notes))
         install = box.addButton("다운로드 및 업데이트", QMessageBox.ButtonRole.AcceptRole)
         page = box.addButton("GitHub 릴리스", QMessageBox.ButtonRole.ActionRole)
         box.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
