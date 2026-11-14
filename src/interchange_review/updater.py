@@ -158,7 +158,7 @@ class UpdateController(QObject):
     def check(self, manual: bool = False) -> None:
         if self._reply is not None:
             if manual:
-                QMessageBox.information(self.parent_widget, "업데이트", "이미 업데이트를 확인하고 있습니다.")
+                QMessageBox.information(self.parent_widget, "업데이트 확인", "업데이트 확인 중…")
             return
         self._manual = manual
         request = QNetworkRequest(QUrl(RELEASE_API))
@@ -189,8 +189,8 @@ class UpdateController(QObject):
                 if self._manual:
                     QMessageBox.information(
                         self.parent_widget,
-                        "업데이트",
-                        f"현재 v{self.current_version}이 최신 버전입니다.",
+                        "업데이트 확인",
+                        "업데이트가 없습니다.",
                     )
                 return
             self._offer(release, architecture_migration)
@@ -203,21 +203,20 @@ class UpdateController(QObject):
     def _offer(self, release: ReleaseInfo, architecture_migration: bool = False) -> None:
         box = QMessageBox(self.parent_widget)
         box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle("업데이트")
+        box.setWindowTitle("업데이트 확인")
         box.setTextFormat(Qt.TextFormat.PlainText)
         if architecture_migration:
             box.setText("이 장치에 맞는 K-GSS ARM64 최적화 버전이 있습니다.")
         else:
-            box.setText(f"K-GSS v{release.version} 업데이트가 있습니다.")
+            box.setText(f"새 버전이 있습니다. (v{release.version})")
         box.setInformativeText("주요 변경 사항\n\n" + release_highlights(release.notes))
-        install = box.addButton("다운로드 및 업데이트", QMessageBox.ButtonRole.AcceptRole)
-        page = box.addButton("GitHub 릴리스", QMessageBox.ButtonRole.ActionRole)
-        box.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
+        install = box.addButton("업데이트", QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton("취소", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(install)
+        box.setEscapeButton(cancel)
         box.exec()
         if box.clickedButton() is install:
             self._start_download(release)
-        elif box.clickedButton() is page:
-            QDesktopServices.openUrl(QUrl(release.page_url))
 
     def _start_download(self, release: ReleaseInfo) -> None:
         if not release.asset_url:
@@ -235,7 +234,7 @@ class UpdateController(QObject):
         self._reply.readyRead.connect(self._write_download_data)
         self._reply.downloadProgress.connect(self._download_progress)
         self._reply.finished.connect(self._download_finished)
-        self._progress = QProgressDialog("업데이트를 다운로드하고 있습니다.", "취소", 0, max(0, release.size), self.parent_widget)
+        self._progress = QProgressDialog("다운로드 중…", "취소", 0, max(0, release.size), self.parent_widget)
         self._progress.setWindowTitle("업데이트")
         self._progress.setWindowModality(self.parent_widget.windowModality())
         self._progress.canceled.connect(self._reply.abort)
@@ -304,8 +303,8 @@ class UpdateController(QObject):
         source.unlink(missing_ok=True)
         choice = QMessageBox.question(
             self.parent_widget,
-            "업데이트 준비 완료",
-            f"v{release.version} 다운로드와 검증이 완료되었습니다.\n지금 재시작하여 업데이트할까요?",
+            "다운로드 완료",
+            "프로그램을 다시 시작할까요?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )

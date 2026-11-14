@@ -32,7 +32,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name=os.environ.get("KGSS_BUILD_NAME", "K-GSS_v5.0.0"),
+    name=os.environ.get("KGSS_BUILD_NAME", "K-GSS_v5.0.1"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

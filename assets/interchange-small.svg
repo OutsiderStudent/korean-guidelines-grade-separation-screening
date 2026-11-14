@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="3 4 186 186">
+  <defs>
+    <path id="ramp" d="M96 27 C96 49 116 68 138 62 C157 57 159 33 143 25 C125 16 113 34 116 51 C119 78 147 94 169 94"/>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="14">
+      <use xlink:href="#ramp" stroke="#20a084"/>
+      <use xlink:href="#ramp" transform="rotate(90 96 96)" stroke="#347ae6"/>
+      <use xlink:href="#ramp" transform="rotate(180 96 96)" stroke="#20a084"/>
+      <use xlink:href="#ramp" transform="rotate(270 96 96)" stroke="#347ae6"/>
+    </g>
+    <path d="M25 96H167" stroke="#16957b" stroke-width="40"/>
+    <path d="M25 96H67 M125 96H167" stroke="#E1FFF7" stroke-width="6" stroke-dasharray="11 10"/>
+    <rect x="75" y="7" width="44" height="178" rx="21" fill="#205bbd"/>
+    <rect x="75" y="7" width="40" height="175" rx="20" fill="#347ae6"/>
+    <path d="M95 23V169" stroke="#F4F8FF" stroke-width="7" stroke-dasharray="12 11"/>
+  </g>
+</svg>

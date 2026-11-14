@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QPoint, QPointF, QTimer, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QMessageBox
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QMessageBox
 from interchange_review.app import APP_VERSION, CoefficientSettingsDialog, ConfirmPage, InputPage, MainWindow, MotionButton, StepProgress
 from interchange_review.screening import APPROACH_ORDER, ApproachInput
 from interchange_review.theme import DARK_STYLE, FONT_FAMILY, LIGHT, STYLE, apply_application_theme
+from interchange_review.updater import UpdateController
 
 
 class UiRegressionTest(unittest.TestCase):
@@ -23,7 +24,39 @@ class UiRegressionTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_version(self) -> None:
-        self.assertEqual(APP_VERSION, "5.0.0")
+        self.assertEqual(APP_VERSION, "5.0.1")
+
+    def test_packaged_start_checks_and_offers_update_with_two_buttons(self) -> None:
+        with patch("sys.frozen", True, create=True), patch.dict(os.environ, {"KGSS_DISABLE_UPDATE_CHECK": "0"}), patch.object(QTimer, "singleShot") as timer:
+            window = MainWindow()
+            timer.assert_any_call(2500, window.updater.check)
+
+        next_release = {
+            "tag_name": "v5.0.2",
+            "body": "2026년 도로용량편람 반영",
+            "assets": [{"name": "K-GSS_v5.0.2_windows-x64.exe"}],
+        }
+        from unittest.mock import Mock
+        from PySide6.QtNetwork import QNetworkReply
+        reply = Mock()
+        reply.error.return_value = QNetworkReply.NetworkError.NoError
+        reply.readAll.return_value = json.dumps(next_release).encode()
+        controller = window.updater
+        controller._reply = reply
+        observed = []
+
+        def cancel_offer():
+            box = self.app.activeModalWidget()
+            if isinstance(box, QMessageBox):
+                observed.append((box.windowTitle(), {b.text() for b in box.buttons()}))
+                box.escapeButton().click()
+
+        with patch("interchange_review.updater.native_windows_architecture", return_value="x64"), patch.object(UpdateController, "_start_download") as download:
+            QTimer.singleShot(0, cancel_offer)
+            controller._check_finished()
+            download.assert_not_called()
+        self.assertEqual(observed, [("업데이트 확인", {"업데이트", "취소"})])
+        window.close()
 
     def test_mixed_right_turn_requires_and_preserves_vehicle_percentage(self) -> None:
         page = InputPage()

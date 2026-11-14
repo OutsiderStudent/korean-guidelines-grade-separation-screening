@@ -72,7 +72,7 @@ from .updater import UpdateController
 
 
 APP_NAME = "입체화검토"
-APP_VERSION = "5.0.0"
+APP_VERSION = "5.0.1"
 APP_AUTHOR = "made by NYH"
 PROJECT_FILTER = "입체화검토 프로젝트 (*.igr3)"
 DEFAULT_DIRECT_FACTORS = (0.85, 0.85)
@@ -392,7 +392,7 @@ class TopologyPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 16)
         root.setSpacing(8)
-        title = QLabel("교차로 형태를 선택해 주세요")
+        title = QLabel("교차로 형태를 설정해 주세요")
         title.setObjectName("pageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(title)
@@ -632,7 +632,7 @@ class CoefficientSettingsDialog(QDialog):
 
     def __init__(self, codes: list[str], settings: dict, direct: dict[str, tuple[float, float]], parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("상세 보정 설정")
+        self.setWindowTitle("상세 설정")
         self.resize(680, 0)
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -647,7 +647,7 @@ class CoefficientSettingsDialog(QDialog):
         mode_form = QFormLayout()
         self.mode = SettingsComboBox()
         self.mode.addItem("개략 자동 보정", "auto")
-        self.mode.addItem("보정계수 직접 입력", "direct")
+        self.mode.addItem("계수 직접 입력", "direct")
         if settings.get("mode") == "legacy":
             self.mode.addItem("기존 프로젝트 자동식", "legacy")
         self.mode.setCurrentIndex(max(0, self.mode.findData(settings.get("mode", "auto"))))
@@ -697,7 +697,7 @@ class CoefficientSettingsDialog(QDialog):
         self.direct_title.setObjectName("panelTitle")
         direct_header.addWidget(self.direct_title)
         direct_header.addStretch()
-        self.reset_direct = MotionButton("기본값으로 복귀")
+        self.reset_direct = MotionButton("기본값")
         self.reset_direct.setObjectName("secondaryButton")
         self.reset_direct.setAutoDefault(False)
         self.reset_direct.clicked.connect(self._reset_direct_factors)
@@ -867,10 +867,10 @@ class InputPage(QWidget):
             "utilization": 0.9,
         }
         self.direct_factors: dict[str, tuple[float, float]] = {}
-        self.advanced_button = MotionButton("상세 보정 설정")
+        self.advanced_button = MotionButton("상세 설정")
         self.advanced_button.setObjectName("secondaryButton")
         title_row.addWidget(self.advanced_button)
-        self.same_heavy = QCheckBox("모든 접근로에 같은 중차량 비율 적용")
+        self.same_heavy = QCheckBox("모든 접근로 공통 중차량 비율 적용")
         self.same_heavy.setChecked(True)
         self.global_heavy = NumericField()
         self.global_heavy.setRange(0, 100)
@@ -949,8 +949,6 @@ class InputPage(QWidget):
         dialog = CoefficientSettingsDialog(list(self.cards), self.calculation_settings, self.direct_factors, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.calculation_settings, self.direct_factors = dialog.values()
-            mode = "직접 계수" if self.calculation_settings["mode"] == "direct" else "자동 산정"
-            self.advanced_button.setText(f"상세 보정 설정 · {mode}")
             self.changed.emit()
 
     def set_codes(self, codes: list[str], preserve: bool = True) -> None:
@@ -989,8 +987,8 @@ class InputPage(QWidget):
         zeros = [code for code, item in self.cards.items() if item.total() == 0]
         self.total.setText(f"전체 유입교통량\n{total:,} 대/시")
         self.warning.setText(
-            "교통량이 0인 접근로: " + ", ".join(zeros) + " · 실제 0인지 확인해 주세요."
-            if zeros else "모든 접근로 입력이 완료됐습니다."
+            "교통량 0대/시 · " + ", ".join(zeros) + " — 입력값을 확인해 주세요."
+            if zeros else "입력 완료"
         )
         self.warning.setProperty("status", "warning" if zeros else "ok")
         self.warning.style().unpolish(self.warning)
@@ -1053,8 +1051,6 @@ class InputPage(QWidget):
             for code, values in data.get("direct_factors", {}).items()
             if code in APPROACH_ORDER
         }
-        mode = "직접 계수" if self.calculation_settings["mode"] == "direct" else "자동 산정"
-        self.advanced_button.setText(f"상세 보정 설정 · {mode}")
 
     def reset_settings(self) -> None:
         self.calculation_settings.update(
@@ -1074,7 +1070,6 @@ class InputPage(QWidget):
             utilization=0.9,
         )
         self.direct_factors = {}
-        self.advanced_button.setText("상세 보정 설정")
 
     def is_valid(self) -> bool:
         return len([item for item in self.cards.values() if item.total() > 0]) >= 2
@@ -1251,9 +1246,9 @@ class ResultPage(QWidget):
         self.detail_table.setFixedHeight(225)
         side.addWidget(self.detail_table)
         self.copy_button = MotionButton("클립보드에 복사")
-        self.png_button = MotionButton("PNG 다운로드")
-        self.detail_button = MotionButton("상세 그래프 다운로드")
-        self.all_button = MotionButton("모든 그래프 PNG 다운로드")
+        self.png_button = MotionButton("PNG 저장")
+        self.detail_button = MotionButton("상세 그래프 저장")
+        self.all_button = MotionButton("전체 PNG 저장")
         self.text_button = MotionButton("계산 결과 복사")
         for button in (self.copy_button, self.png_button, self.detail_button, self.all_button, self.text_button):
             button.setMinimumHeight(30)
@@ -1275,12 +1270,12 @@ class ResultPage(QWidget):
         self.hero.setStyleSheet(f"QFrame#resultHero {{ background:{bg}; border:1px solid {color}; border-radius:18px; }}")
         self.area.setStyleSheet(f"color:{color};")
         self.area.setText(f"판정: 영역 {result.area.value}")
-        self.recommendation.setText(f"{message}\n가장 불리한 접근로 쌍: {result.critical_pair.name} · 전체 {result.total_traffic:,} 대/시")
+        self.recommendation.setText(f"{message}\n최종 판정 기준 쌍: {result.critical_pair.name} · 전체 {result.total_traffic:,} 대/시")
         self.extension.setText(
             "※ 3·5·6지 결과는 지침의 4지 교차로 판정식을 충돌 접근로 쌍에 보수적으로 확장하고 최악 결과를 채택합니다."
             if result.is_extended_method else "지침의 4지 교차로 기준에 따라 4개 충돌 접근로 쌍을 검토했습니다."
         )
-        self.critical_label.setText(f"가장 불리한 접근로 쌍  {result.critical_pair.name}")
+        self.critical_label.setText(f"최종 판정 기준 쌍  {result.critical_pair.name}")
         self.pairs.setRowCount(len(result.pairs))
         for row, pair in enumerate(result.pairs):
             pair_item = QTableWidgetItem(pair.name)
@@ -1369,7 +1364,7 @@ class ResultPage(QWidget):
             return
         lines = [
             f"판정: 영역 {self.result.area.value}",
-            f"가장 불리한 접근로 쌍: {self.result.critical_pair.name}",
+            f"최종 판정 기준 쌍: {self.result.critical_pair.name}",
             f"교차로 전체 유입교통량: {self.result.total_traffic:,} 대/시",
         ]
         for pair in self.result.pairs:
@@ -1407,7 +1402,7 @@ class AppendixTab(QWidget):
             "<p>이동류 보정계수 fM = 1 / Σ(pM × EM) — 도로용량편람(2026), 표 8-4</p>"
             "<p>중차량 보정계수 fHV = 1 / [(1 − PHV) + PHV × EHV], EHV=1.8 — 도로용량편람(2026), 표 8-4</p>"
             "<p>경사 보정계수 fg = min[1, 1 − 0.012gr], 차로폭 보정계수 fw = min[1, 1 − 0.35(3 − w)]</p>"
-            "<p>P′ 기본값 = (C + 600) × 0.9 + 2 × 3,600 / 36이며 상세 보정 설정에서 변경할 수 있습니다.</p>"
+            "<p>P′ 기본값 = (C + 600) × 0.9 + 2 × 3,600 / 36이며 상세 설정에서 변경할 수 있습니다.</p>"
             "<p>개략 자동 보정은 접근로 교통량 전체를 대표 이동류로 묶고 동일 차로폭·경사를 가정합니다. 차로별 교통량 배분과 현시가 필요한 정밀 운영분석에는 별도 분석이 필요합니다.</p>"
             "<h2>기본 적용값</h2>"
             "<p>평지 · 차로폭 3.0m · 보호좌회전 E=1.08 · 녹색신호 우회전 E=1.20 · EHV=1.8</p>"
@@ -1625,7 +1620,7 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
         box.setWindowTitle(APP_NAME)
-        box.setText("현재 검토 내용을 저장하시겠습니까?")
+        box.setText("변경 내용을 저장할까요?")
         box.setStandardButtons(
             QMessageBox.StandardButton.Save
             | QMessageBox.StandardButton.Discard

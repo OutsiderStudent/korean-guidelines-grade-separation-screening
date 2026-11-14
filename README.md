@@ -1,7 +1,7 @@
 # Korean Guidelines-Based Grade Separation Screening
 
 **Traffic Volume and Capacity Assessment**  
-한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v5.0.0**
+한국어 프로그램명: **입체화검토** · 약칭: **K-GSS** · 버전: **v5.0.1**
 
 made by NYH · dmecyh@naver.com
 
@@ -58,9 +58,9 @@ python validation\render_ui.py
 .\build.ps1
 ```
 
-로컬 x64 빌드 결과: `dist\K-GSS_v5.0.0.exe`
+로컬 x64 빌드 결과: `dist\K-GSS_v5.0.1.exe`
 
-GitHub Release에는 `K-GSS_v5.0.0_windows-x64.exe`와 `K-GSS_v5.0.0_windows-arm64.exe`를 함께 제공합니다.
+GitHub Release에는 `K-GSS_v5.0.1_windows-x64.exe`와 `K-GSS_v5.0.1_windows-arm64.exe`를 함께 제공합니다.
 
 기존 2013 편람 기반 최종 상태는 Git 태그 `legacy-khcm2013-v3.9.1`에 보존합니다.
 
